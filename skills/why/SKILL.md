@@ -9,6 +9,8 @@ Investigate the motivation and intent behind code. Why was it built this way? Wh
 
 Companion to the `how` skill. `how` answers what the code does and how it works. `why` answers what forces led to its shape.
 
+Read `../pstack-harness/SKILL.md` before discovering integrations, launching investigators, or selecting models.
+
 ## How this skill works
 
 Historical context spreads across seven evidence categories: source control history, issue or ticket tracking, long-form documents, real-time team chat, infrastructure observability, error or exception tracking, and product analytics warehouses. You cannot predict from the question alone which one holds the answer, so the skill enumerates available MCPs at run time, maps each to a category, queries all seven in parallel, then synthesizes with explicit confidence calibration. Null results from searched categories are first-class evidence about how the decision was made; report them alongside positive findings. The default is coverage, not minimalism.
@@ -56,7 +58,7 @@ Parse what the user is asking. The **target** is usually a chunk of code, a patt
 - "Why does this code still exist?" Dead-code territory.
 - "What's the history of X?" Broad archaeological sweep.
 
-If the target is vague ("why do we do it this way?" with no clear referent), make your best guess from conversation context (open files, recent edits, cursor location, what was just discussed). State your interpretation briefly so the user can redirect if you're off, then proceed.
+If the target is vague ("why do we do it this way?" with no clear referent), make your best guess from conversation context (open files, recent edits, caret location, what was just discussed). State your interpretation briefly so the user can redirect if you're off, then proceed.
 
 ## Step 2. Establish the Code Anchor
 
@@ -97,7 +99,7 @@ Capture this as seed context (file paths, symbols, commits, PR numbers, linked t
 
 ### Discovery
 
-Before spawning investigators, list the available MCPs from the Cursor environment. Use the available-tools map when present. Otherwise inspect the `mcps/` directory Cursor exposes for enabled MCP servers.
+Before launching investigators, list the available connectors, MCP servers, and native integrations from the current harness. Use its tool catalog, resource list, configuration, or help surface. Do not assume a specific discovery tool or directory.
 
 Map each available MCP to one evidence category:
 
@@ -113,12 +115,9 @@ Source control is always available through git and `gh`. For the other six, clas
 
 Aim for a complete **coverage map**, not a minimal one. A null result from an issue tracker is evidence the decision was not ticketed, a useful fact in itself. Document the null, don't skip the search.
 
-Launch all matching investigators in a single message so they run concurrently. One investigator per category lets each specialize in one tool's query vocabulary and result shape. Don't ask one agent to cover multiple MCPs.
+Launch all matching investigators concurrently when the harness supports it. One investigator per category lets each specialize in one integration's query vocabulary and result shape. Do not ask one agent to cover multiple integrations.
 
-Subagent config (each):
-- `subagent_type`: `generalPurpose`
-- `model`: your configured why-investigators model (default `grok-4.6-fast-xhigh`)
-- `readonly`: `false` (agent mode). **Do not use readonly/Ask mode.** It strips MCP access, which disables MCP-backed investigators entirely. The source control investigator would be safe in readonly, but keep modes uniform. Investigators still shouldn't write anything. That's a posture, not a sandbox.
+Use `why investigators` from the active harness's pstack model file, or inherit the parent model. Investigators need connector access but must not mutate files or external systems. Use a read-only permission mode only when it preserves the required connectors. If delegation is unavailable, run the category playbooks sequentially in the parent and keep their evidence blocks separate.
 
 Each investigator gets:
 1. The base prompt from `references/investigator-prompt.md`
@@ -160,11 +159,7 @@ If your scope assessment suggests a single-commit trivial target where the PR de
 
 ## Step 4. Synthesize
 
-Spawn one synthesizer subagent:
-
-- `subagent_type`: `generalPurpose`
-- `model`: your configured why-synthesizer model (default `claude-fable-5-thinking-max`)
-- `readonly`: `false` (agent mode). The synthesizer's quality check spot-verifies citations, which can require MCP access. Readonly/Ask mode strips MCPs and defeats that.
+Launch one synthesizer in an independent context. Use `why synthesizer` from the active harness's pstack model file, or inherit the parent model. It needs connector access to spot-verify citations but must not write. If delegation is unavailable, synthesize in the parent and disclose the missing independent pass.
 
 The synthesizer gets:
 1. The investigator findings, including any null results and any categories skipped with justification

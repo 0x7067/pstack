@@ -8,6 +8,8 @@ disable-model-invocation: true
 
 Mine the current conversation for durable learnings, then route them into skill edits.
 
+Read `../pstack-harness/SKILL.md` before locating transcripts, launching reviewers, selecting models, or invoking skill-authoring guidance.
+
 ## When to invoke
 
 - The user said "reflect" or "/reflect".
@@ -22,7 +24,7 @@ Skip when the conversation is trivial, off-topic, or already covered by an exist
 
 ### 1. Locate the active transcript
 
-The parent finds its own transcript file before fanning out. The system prompt names the active workspace's `agent-transcripts/` directory; use that path. Do not glob across `~/.cursor/projects/*/`. That crosses workspace boundaries and reads private chats from unrelated projects.
+The parent finds its own transcript before fanning out. Use session metadata or the current harness's documented storage. Stay inside the active workspace; never glob across other projects. If no transcript resolves, write a tight digest of the session and pass that instead.
 
 ```bash
 ls -t <agent-transcripts>/*.jsonl <agent-transcripts>/*/*.jsonl <agent-transcripts>/*/subagents/*.jsonl 2>/dev/null | head -10
@@ -30,23 +32,23 @@ ls -t <agent-transcripts>/*.jsonl <agent-transcripts>/*/*.jsonl <agent-transcrip
 
 Three transcript layouts: legacy flat (`<id>.jsonl`), current nested (`<id>/<id>.jsonl`), and subagent (`<parent>/subagents/<child>.jsonl`).
 
-For each candidate, read the first JSONL line and check that `message.content[0].text` contains the conversation's opening user prompt. Take the matching path. If no path resolves, write a tight digest of the session and pass that instead.
+For JSONL candidates, read the opening record and match it to the conversation's opening user prompt. Take the matching path. Other formats use the harness's session metadata.
 
 ### 2. Spawn three reviewers in parallel
 
-One message, three `Task` calls, `subagent_type: generalPurpose`, explicit `model:` on each, agent mode (`readonly: false`). Reviewers need MCP access for context lookups (tickets, chat threads, observability traces referenced in the transcript); readonly strips MCPs. The prompt forbids file writes; the parent applies edits.
+Launch three reviewers concurrently through the harness's native delegation capability. Reviewers need connector access for context lookups but must not write files or mutate external systems. The parent applies edits. If delegation is unavailable, run the three lenses sequentially in the parent and disclose that they are not independent contexts.
 
-| Lens | `model` | Prompt template |
+| Lens | Model role | Prompt template |
 |---|---|---|
-| Judgment | your configured reflect-judgment model (default `claude-fable-5-thinking-max`) | `references/judgment-reviewer.md` |
-| Tooling | your configured reflect-tooling model (default `gpt-5.6-sol-max`) | `references/tooling-reviewer.md` |
-| Divergent | your configured reflect-judgment model (default `claude-fable-5-thinking-max`) | `references/divergent-reviewer.md` |
+| Judgment | configured reflect judgment, otherwise inherit parent | `references/judgment-reviewer.md` |
+| Tooling | configured reflect tooling, otherwise inherit parent | `references/tooling-reviewer.md` |
+| Divergent | configured reflect divergent, otherwise inherit parent | `references/divergent-reviewer.md` |
 
-Pass each template verbatim, substituting the transcript path or digest where marked. Reviewers return findings in the `Task` response body.
+Pass each template verbatim, substituting the transcript path or digest where marked. Reviewers return findings to the parent.
 
 ### 3. Synthesize
 
-One `Task` call, `subagent_type: generalPurpose`, using your configured reflect-judgment model (default `claude-fable-5-thinking-max`), agent mode (`readonly: false`). The synthesizer's quality check includes spot-verifying citations, which can require MCP access; readonly strips MCPs. Use `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. The synthesizer returns a structured Accepted / Rejected / Backlog list.
+Launch one synthesizer using the configured reflect synthesizer model, or inherit the parent. It needs connector access to spot-verify citations but must not write. Use `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. The synthesizer returns a structured Accepted / Rejected / Backlog list. If delegation is unavailable, synthesize in the parent.
 
 ### 4. Structural enforcement check
 
@@ -61,9 +63,9 @@ Backlog items file to whatever devex / backlog tracker your team uses automatica
 For each approved Accepted item, follow the Routing field exactly:
 
 - Trivial existing-skill edit (a one-line bullet, a tightened sentence, a stale fact corrected): parent does directly.
-- Substantive existing-skill edit (a new section, a new pattern table, more than ~10 lines): hand to Cursor's built-in `create-skill` skill and run its draft / test / iterate loop.
-- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `create-skill` and run its description-optimization loop.
-- `new skill via create-skill: <kebab-name>`: hand creation to `create-skill`. Do not invent the shape ad hoc.
+- Substantive existing-skill edit (a new section, a new pattern table, more than ~10 lines): use the active harness's skill-authoring guidance and run its draft, validate, and iterate loop.
+- `tune description: <skill path>` (the skill exists but did not trigger when it should have): use skill-authoring guidance and run a description-optimization loop.
+- `new skill: <kebab-name>`: use skill-authoring guidance. Do not invent the shape ad hoc.
 
 If your environment ships a SKILL.md validator, run it on every touched skill before declaring done. Skip this step if it doesn't.
 

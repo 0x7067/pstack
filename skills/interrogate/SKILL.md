@@ -8,6 +8,8 @@ disable-model-invocation: true
 
 Spawn one reviewer per configured model to adversarially review code changes. Each model gets the same prompt and rubric. The adversarial signal comes from model diversity, not assigned personas. Models differ in blind spots, priors, and reasoning patterns. Agreement across models is high-confidence signal; lone-model findings are worth reading but lower confidence.
 
+Read `../pstack-harness/SKILL.md` before launching reviewers.
+
 The deliverable is a synthesized verdict. Do NOT auto-apply changes.
 
 ## Step 1, Determine Scope
@@ -33,21 +35,16 @@ Write one clear paragraph. Reviewers challenge whether the work achieves the int
 
 ## Step 3, Spawn Reviewers
 
-Launch all reviewers in a single message using the Task tool. Use the `interrogate reviewers` list from `~/.cursor/rules/pstack-models.mdc` when present, one reviewer per entry, extending or shrinking the Reviewer A/B/C/D labels below to the configured entry count; otherwise use the table defaults.
+Launch all reviewers concurrently through the harness's native delegation capability. Use `interrogate reviewers` from the active harness's pstack model file when present, one reviewer per entry, extending or shrinking the Reviewer labels to the configured entry count. Otherwise run four independent reviewers that inherit the parent model.
 
-| Subagent | Default model |
+| Reviewer | Default model |
 |----------|---------------|
-| Reviewer A | `claude-fable-5-thinking-max` |
-| Reviewer B | `gpt-5.6-sol-max` |
-| Reviewer C | `grok-4.6-fast-xhigh` |
-| Reviewer D | `claude-opus-5-thinking-xhigh` |
+| Reviewer A | inherit parent |
+| Reviewer B | inherit parent |
+| Reviewer C | inherit parent |
+| Reviewer D | inherit parent |
 
-For each reviewer:
-- `subagent_type`: `generalPurpose`
-- `model`: the configured `interrogate reviewers` entry, or the table default with no configured line
-- `readonly`: `true`
-
-If a model slug is rejected as unresolvable when you try to spawn the subagent, check the valid slugs in the Task tool's error message, pick the closest equivalent (prefer the highest-reasoning tier of the same family), spawn with the valid slug, and open a separate PR to update the configured value or default table. Do not block the review on the slug issue. If the configured value is `inherit-parent` or `auto`, omit `model` instead; never treat those aliases as broken slugs or enter this fallback for them.
+Every reviewer is read-only and uses its configured entry. `inherit-parent` omits the model override. When an identifier is rejected, fall back to the parent for that reviewer and report the stale configuration once. Never guess a replacement identifier. If delegation is unavailable, run the same rubric passes sequentially in the parent and disclose that they are not independent contexts.
 
 Read `references/reviewer-prompt.md` and fill in the template with:
 1. The stated intent

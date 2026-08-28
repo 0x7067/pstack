@@ -4,7 +4,7 @@ import process from "node:process";
 
 const RULE =
 	"Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.";
-const LANES = "Ten lanes on `grok-4.6-fast-xhigh` at the PR head";
+const LANES = "Ten independent lanes at the PR head";
 const SUB_BLOCKS = [
 	"Depends on.",
 	"Files.",
@@ -17,7 +17,7 @@ const SUB_BLOCKS = [
 	"Merge.",
 ];
 const PROGRAM_H3 = ["Arm the program", "Spawn owners", "PR mechanics", "Verdict and merge", "Boot recipe"];
-const PROGRAM_MARKERS = ["/goal", "git show origin/main:", /30[- ]minute/, "status message"];
+const PROGRAM_MARKERS = ["persistent goal", "git show origin/main:", /30[- ]minute/, "status message"];
 const HOW_TO_READ_MARKERS = [
 	"One box is one unit of work",
 	"names the evidence",
@@ -30,7 +30,7 @@ const BOX = /^\s*- \[[ x]\] (.*)$/;
 
 const file = process.argv[2];
 if (!file) {
-	console.error("Usage: node check-plan.mjs <plan.md>");
+	console.error("Usage: bun check-plan.mjs <plan.md>");
 	process.exit(2);
 }
 
