@@ -1,3 +1,4 @@
 node_modules/
+.firecrawl/
 .DS_Store
 *.log
