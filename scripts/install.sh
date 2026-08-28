@@ -36,7 +36,7 @@ for skill_dir in "${skill_dirs[@]}"; do
 		exit 1
 	fi
 	if [ -e "$claude_link" ] || [ -L "$claude_link" ]; then
-		if [ ! -L "$claude_link" ] || [ "$(readlink "$claude_link")" != "$target" ]; then
+		if [ ! -L "$claude_link" ] || [ "$(realpath "$claude_link" 2>/dev/null || true)" != "$(realpath "$target" 2>/dev/null || true)" ]; then
 			echo "Claude skill collision: $claude_link" >&2
 			exit 1
 		fi
