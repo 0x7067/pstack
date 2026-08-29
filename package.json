@@ -1,0 +1,31 @@
+{
+  "name": "@0x7067/pstack",
+  "version": "0.1.0",
+  "description": "pstack: Agent Skills for rigorous, parallelizable engineering work.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0x7067/pstack.git"
+  },
+  "homepage": "https://github.com/0x7067/pstack",
+  "bugs": {
+    "url": "https://github.com/0x7067/pstack/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "skills",
+    "agent-skills",
+    "pstack",
+    "poteto-mode"
+  ],
+  "files": [
+    "skills",
+    "scripts",
+    "docs",
+    "LICENSE",
+    "README.md"
+  ],
+  "pi": {
+    "skills": ["./skills"]
+  }
+}

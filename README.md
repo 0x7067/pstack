@@ -14,13 +14,29 @@ fork it. improve it. make it yours. PRs are welcome!
 
 ## install
 
+### Pi
+
+```bash
+pi install git:github.com/0x7067/pstack
+```
+
+or from a local checkout:
+
+```bash
+pi install .
+```
+
+then `/reload` so this session picks up the skills.
+
+### Codex, Claude Code, oh-my-pi, and prime-agent
+
 From this checkout:
 
 ```bash
 scripts/install.sh
 ```
 
-The installer copies each skill to `~/.agents/skills`, the source of truth for Pi, Codex, oh-my-pi, and prime-agent. It then creates one symlink per skill under `~/.claude/skills`, because Claude Code uses its own personal skill directory. Run `scripts/install.sh --dry-run` to inspect every target first.
+The installer copies each skill to `~/.agents/skills`, the source of truth for Codex, oh-my-pi, and prime-agent. It then creates one symlink per skill under `~/.claude/skills`, because Claude Code uses its own personal skill directory. Run `scripts/install.sh --dry-run` to inspect every target first.
 
 Invoke skills in the syntax your harness exposes:
 
