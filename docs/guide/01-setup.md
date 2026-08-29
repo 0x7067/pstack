@@ -4,6 +4,30 @@ In this page you install the skills, pick which models pstack uses, and run your
 
 ## Install the skills
 
+### Pi
+
+```text
+pi install git:github.com/0x7067/pstack
+```
+
+or from a local checkout:
+
+```text
+pi install .
+```
+
+then `/reload` so this session picks up the skills.
+
+If you already ran `scripts/install.sh`, remove those pstack copies from `~/.agents/skills`. Pi auto-loads that directory, and the copies outrank the package after `pi install`. From a checkout:
+
+```text
+for skill in skills/*/SKILL.md; do
+  rm -rf "$HOME/.agents/skills/$(basename "$(dirname "$skill")")"
+done
+```
+
+### Codex, Claude Code, oh-my-pi, and prime-agent
+
 From the pstack checkout, run:
 
 ```text

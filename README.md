@@ -28,6 +28,14 @@ pi install .
 
 then `/reload` so this session picks up the skills.
 
+If you already ran `scripts/install.sh`, remove those pstack copies from `~/.agents/skills`. Pi auto-loads that directory, and the copies outrank the package after `pi install`. From a checkout:
+
+```bash
+for skill in skills/*/SKILL.md; do
+  rm -rf "$HOME/.agents/skills/$(basename "$(dirname "$skill")")"
+done
+```
+
 ### Codex, Claude Code, oh-my-pi, and prime-agent
 
 From this checkout:
