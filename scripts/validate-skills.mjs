@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, matchesGlob, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,22 +8,14 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const skillsRoot = join(root, "skills");
 const profilePath = join(root, "profiles", "pstack-lite.json");
+const agentPluginManifestPath = join(root, "plugin.json");
+const agentPluginSchemaUrl = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+const agentPluginSchemaPath = join(root, "schemas", "1.0.0", "plugin.schema.json");
+const manifestFixturePath = join(root, "tests", "fixtures", "plugin-missing-required-name.json");
+const legacyPolicyPath = join(root, "scripts", "legacy-disabled-skills.txt");
 const errors = [];
 const fail = (path, message) => errors.push(`${relative(root, path)}: ${message}`);
-const agentPluginManifestPath = join(root, "plugin.json");
-const agentPluginSchema = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
-const agentPluginFields = new Set([
-	"$schema",
-	"name",
-	"version",
-	"description",
-	"author",
-	"homepage",
-	"repository",
-	"license",
-	"keywords",
-	"extensions",
-]);
+const agentSkillFields = new Set(["name", "description", "license", "compatibility", "metadata", "allowed-tools"]);
 
 const pstackLiteProfileSkills = [
 	"how",
@@ -57,33 +49,220 @@ function skillDirsIn(skillsDir) {
 		.sort();
 }
 
+function hasOwn(object, key) {
+	return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function stripYamlComment(raw) {
+	let quote = null;
+	for (let index = 0; index < raw.length; index += 1) {
+		const character = raw[index];
+		if (quote === "\"" && character === "\\") {
+			index += 1;
+			continue;
+		}
+		if (quote === "'" && character === "'" && raw[index + 1] === "'") {
+			index += 1;
+			continue;
+		}
+		if ((character === "\"" || character === "'") && !quote) {
+			quote = character;
+			continue;
+		}
+		if (character === quote) {
+			quote = null;
+			continue;
+		}
+		if (character === "#" && (index === 0 || /\s/.test(raw[index - 1]))) {
+			return raw.slice(0, index).trimEnd();
+		}
+	}
+	return raw.trim();
+}
+
+function parseYamlScalar(raw, path, lineNumber) {
+	const value = stripYamlComment(raw);
+	if (value === "") return null;
+	if (value.startsWith("\"")) {
+		if (!value.endsWith("\"")) {
+			fail(path, `invalid double-quoted YAML value on line ${lineNumber}`);
+			return undefined;
+		}
+		try {
+			return JSON.parse(value);
+		} catch (error) {
+			fail(path, `invalid double-quoted YAML value on line ${lineNumber}: ${error instanceof Error ? error.message : String(error)}`);
+			return undefined;
+		}
+	}
+	if (value.startsWith("'")) {
+		if (!value.endsWith("'")) {
+			fail(path, `invalid single-quoted YAML value on line ${lineNumber}`);
+			return undefined;
+		}
+		return value.slice(1, -1).replace(/''/g, "'");
+	}
+	if (value.startsWith("{") || value.startsWith("[")) {
+		try {
+			return JSON.parse(value);
+		} catch (error) {
+			fail(path, `invalid flow-style YAML value on line ${lineNumber}: ${error instanceof Error ? error.message : String(error)}`);
+			return undefined;
+		}
+	}
+	if (value === "null" || value === "~") return null;
+	if (value === "true") return true;
+	if (value === "false") return false;
+	if (/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(value)) return Number(value);
+	return value;
+}
+
+function parseBlockScalar(lines, start, end, marker, path) {
+	const content = [];
+	let minimumIndent = Infinity;
+	let index = start;
+	while (index < end) {
+		const line = lines[index];
+		if (line.trim() === "") {
+			content.push("");
+			index += 1;
+			continue;
+		}
+		const indentMatch = line.match(/^[ \t]+/);
+		if (!indentMatch) break;
+		if (indentMatch[0].includes("\t")) {
+			fail(path, `tabs are not valid YAML indentation on line ${index + 1}`);
+		}
+		minimumIndent = Math.min(minimumIndent, indentMatch[0].length);
+		content.push(line);
+		index += 1;
+	}
+	const indent = Number.isFinite(minimumIndent) ? minimumIndent : 0;
+	const unindented = content.map((line) => line === "" ? "" : line.slice(indent));
+	let value;
+	if (marker.startsWith("|")) {
+		value = unindented.join("\n");
+	} else {
+		value = "";
+		for (const line of unindented) {
+			if (value === "") value = line;
+			else if (line === "" || value.endsWith("\n")) value += `\n${line}`;
+			else value += ` ${line}`;
+		}
+	}
+	if (!marker.endsWith("-")) value += "\n";
+	if (marker.endsWith("+")) value += "\n";
+	return { value, nextIndex: index };
+}
+
+function parseSkillFrontmatter(text, path) {
+	const lines = text.split(/\r?\n/);
+	if (lines[0] !== "---") {
+		fail(path, "frontmatter must start on line 1");
+		return null;
+	}
+	const end = lines.indexOf("---", 1);
+	if (end === -1) {
+		fail(path, "frontmatter has no closing delimiter");
+		return null;
+	}
+
+	const fields = Object.create(null);
+	let index = 1;
+	while (index < end) {
+		const line = lines[index];
+		if (line.trim() === "" || /^\s*#/.test(line)) {
+			index += 1;
+			continue;
+		}
+		if (/^\s/.test(line)) {
+			fail(path, `unexpected indentation in frontmatter on line ${index + 1}`);
+			index += 1;
+			continue;
+		}
+		const match = line.match(/^([A-Za-z][A-Za-z0-9-]*):(?:[ \t]*(.*))?$/);
+		if (!match) {
+			fail(path, `invalid YAML mapping entry on line ${index + 1}`);
+			index += 1;
+			continue;
+		}
+		const key = match[1];
+		if (hasOwn(fields, key)) fail(path, `duplicate frontmatter field ${key}`);
+		const rawValue = match[2] ?? "";
+		const cleanValue = stripYamlComment(rawValue);
+
+		if (key === "metadata" && cleanValue === "") {
+			const metadata = Object.create(null);
+			index += 1;
+			while (index < end) {
+				const nestedLine = lines[index];
+				if (nestedLine.trim() === "" || /^\s*#/.test(nestedLine)) {
+					index += 1;
+					continue;
+				}
+				const nestedMatch = nestedLine.match(/^[ \t]+([^:#][^:]*):(?:[ \t]*(.*))?$/);
+				if (!nestedMatch) {
+					if (/^\s/.test(nestedLine)) fail(path, `invalid metadata mapping on line ${index + 1}`);
+					break;
+				}
+				const metadataKey = nestedMatch[1].trim();
+				if (!metadataKey) fail(path, `metadata key is empty on line ${index + 1}`);
+				if (hasOwn(metadata, metadataKey)) fail(path, `duplicate metadata field ${metadataKey}`);
+				metadata[metadataKey] = parseYamlScalar(nestedMatch[2] ?? "", path, index + 1);
+				index += 1;
+			}
+			fields[key] = metadata;
+			continue;
+		}
+
+		if (/^[|>][+-]?$/.test(cleanValue)) {
+			const block = parseBlockScalar(lines, index + 1, end, cleanValue, path);
+			fields[key] = block.value;
+			index = block.nextIndex;
+			continue;
+		}
+		fields[key] = parseYamlScalar(rawValue, path, index + 1);
+		index += 1;
+	}
+	return fields;
+}
+
 function validateSkillFrontmatter(skillsDir) {
 	const skillDirs = skillDirsIn(skillsDir);
 	for (const directoryName of skillDirs) {
 		const path = join(skillsDir, directoryName, "SKILL.md");
-		const text = readFileSync(path, "utf8");
-		const lines = text.split(/\r?\n/);
-		if (lines[0] !== "---") {
-			fail(path, "frontmatter must start on line 1");
-			continue;
+		const fields = parseSkillFrontmatter(readFileSync(path, "utf8"), path);
+		if (!fields) continue;
+		for (const field of Object.keys(fields)) {
+			if (!agentSkillFields.has(field)) fail(path, `unsupported Agent Skills frontmatter field ${field}`);
 		}
-		const end = lines.indexOf("---", 1);
-		if (end === -1) {
-			fail(path, "frontmatter has no closing delimiter");
-			continue;
+
+		if (!hasOwn(fields, "name")) fail(path, "frontmatter requires name");
+		if (!hasOwn(fields, "description")) fail(path, "frontmatter requires description");
+		const name = fields.name;
+		const description = fields.description;
+		if (typeof name !== "string" || name.length === 0) fail(path, "name must be a non-empty string");
+		if (typeof description !== "string" || description.length === 0) fail(path, "description must be a non-empty string");
+		if (typeof name === "string" && name !== directoryName) fail(path, `name ${name} must match directory ${directoryName}`);
+		if (typeof name === "string" && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) fail(path, `invalid Agent Skills name ${name}`);
+		if (typeof name === "string" && name.length > 64) fail(path, "name exceeds 64 characters");
+		if (typeof description === "string" && description.length > 1024) fail(path, "description exceeds 1024 characters");
+		if (hasOwn(fields, "license") && typeof fields.license !== "string") fail(path, "license must be a string");
+		if (hasOwn(fields, "compatibility")) {
+			if (typeof fields.compatibility !== "string" || fields.compatibility.length === 0 || fields.compatibility.length > 500) {
+				fail(path, "compatibility must be a 1-500 character string");
+			}
 		}
-		const fields = new Map();
-		for (const line of lines.slice(1, end)) {
-			const match = line.match(/^([a-z][a-z0-9-]*):\s*(.*)$/);
-			if (match) fields.set(match[1], match[2].replace(/^['"]|['"]$/g, ""));
+		if (hasOwn(fields, "allowed-tools") && typeof fields["allowed-tools"] !== "string") {
+			fail(path, "allowed-tools must be a string");
 		}
-		const name = fields.get("name");
-		const description = fields.get("description");
-		if (!name) fail(path, "frontmatter requires name");
-		if (!description) fail(path, "frontmatter requires description");
-		if (name && name !== directoryName) fail(path, `name ${name} must match directory ${directoryName}`);
-		if (name && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) fail(path, `invalid Agent Skills name ${name}`);
-		if (name && name.length > 64) fail(path, "name exceeds 64 characters");
+		if (hasOwn(fields, "metadata")) {
+			const metadata = fields.metadata;
+			if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) fail(path, "metadata must be a mapping");
+			else for (const [key, value] of Object.entries(metadata)) {
+				if (typeof value !== "string") fail(path, `metadata.${key} must be a string`);
+			}
+		}
 	}
 	return skillDirs;
 }
@@ -97,60 +276,151 @@ function readJson(path) {
 	}
 }
 
+function jsonType(value) {
+	if (value === null) return "null";
+	if (Array.isArray(value)) return "array";
+	return typeof value;
+}
+
+function sameJson(left, right) {
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function resolveJsonPointer(document, reference) {
+	if (reference === "#") return document;
+	if (!reference.startsWith("#/")) return undefined;
+	let value = document;
+	for (const part of reference.slice(2).split("/")) {
+		const key = part.replace(/~1/g, "/").replace(/~0/g, "~");
+		if (!value || typeof value !== "object" || !hasOwn(value, key)) return undefined;
+		value = value[key];
+	}
+	return value;
+}
+
+function validateJsonSchema(value, schema, location = "$", rootSchema = schema) {
+	const issues = [];
+	if (!schema || typeof schema !== "object") return [{ path: location, message: "schema node is not an object" }];
+	if (schema.$ref) {
+		const target = resolveJsonPointer(rootSchema, schema.$ref);
+		if (target === undefined) return [{ path: location, message: `unresolved schema reference ${schema.$ref}` }];
+		return validateJsonSchema(value, target, location, rootSchema);
+	}
+	if (hasOwn(schema, "const") && !sameJson(value, schema.const)) {
+		issues.push({ path: location, message: `must equal ${JSON.stringify(schema.const)}` });
+	}
+	if (Array.isArray(schema.enum) && !schema.enum.some((candidate) => sameJson(value, candidate))) {
+		issues.push({ path: location, message: "must equal one of the allowed values" });
+	}
+	if (schema.type) {
+		const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+		if (!types.includes(jsonType(value))) {
+			issues.push({ path: location, message: `must be ${types.join(" or ")}, got ${jsonType(value)}` });
+			return issues;
+		}
+	}
+	if (Array.isArray(schema.anyOf)) {
+		const matched = schema.anyOf.some((candidate) => validateJsonSchema(value, candidate, location, rootSchema).length === 0);
+		if (!matched) issues.push({ path: location, message: "must satisfy one schema in anyOf" });
+	}
+	if (Array.isArray(schema.oneOf)) {
+		const matches = schema.oneOf.filter((candidate) => validateJsonSchema(value, candidate, location, rootSchema).length === 0).length;
+		if (matches !== 1) issues.push({ path: location, message: "must satisfy exactly one schema in oneOf" });
+	}
+	if (schema.not && validateJsonSchema(value, schema.not, location, rootSchema).length === 0) {
+		issues.push({ path: location, message: "must not satisfy the nested schema" });
+	}
+	if (typeof value === "string") {
+		if (typeof schema.minLength === "number" && value.length < schema.minLength) issues.push({ path: location, message: `must have at least ${schema.minLength} characters` });
+		if (typeof schema.maxLength === "number" && value.length > schema.maxLength) issues.push({ path: location, message: `must have at most ${schema.maxLength} characters` });
+		if (typeof schema.pattern === "string" && !new RegExp(schema.pattern).test(value)) issues.push({ path: location, message: `must match ${schema.pattern}` });
+	}
+	if (Array.isArray(value)) {
+		if (schema.items && typeof schema.items === "object") {
+			for (let index = 0; index < value.length; index += 1) {
+				issues.push(...validateJsonSchema(value[index], schema.items, `${location}[${index}]`, rootSchema));
+			}
+		}
+	}
+	if (value && typeof value === "object" && !Array.isArray(value)) {
+		if (Array.isArray(schema.required)) {
+			for (const field of schema.required) {
+				if (!hasOwn(value, field)) issues.push({ path: `${location}.${field}`, message: `required property ${field} is missing` });
+			}
+		}
+		const properties = schema.properties && typeof schema.properties === "object" ? schema.properties : {};
+		for (const [field, fieldValue] of Object.entries(value)) {
+			if (hasOwn(properties, field)) {
+				issues.push(...validateJsonSchema(fieldValue, properties[field], `${location}.${field}`, rootSchema));
+			} else if (schema.additionalProperties === false) {
+				issues.push({ path: `${location}.${field}`, message: "property is not allowed" });
+			} else if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
+				issues.push(...validateJsonSchema(fieldValue, schema.additionalProperties, `${location}.${field}`, rootSchema));
+			}
+		}
+	}
+	return issues;
+}
+
+function loadAgentPluginSchema() {
+	if (!existsSync(agentPluginSchemaPath)) {
+		fail(agentPluginSchemaPath, "published Agent Plugins schema fixture is missing");
+		return null;
+	}
+	const schema = readJson(agentPluginSchemaPath);
+	if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+		fail(agentPluginSchemaPath, "published Agent Plugins schema fixture must be an object");
+		return null;
+	}
+	if (schema.$id !== agentPluginSchemaUrl) fail(agentPluginSchemaPath, `$id must be ${agentPluginSchemaUrl}`);
+	return schema;
+}
+
 function validateAgentPluginManifest() {
 	const path = agentPluginManifestPath;
+	const schema = loadAgentPluginSchema();
 	if (!existsSync(path)) {
 		fail(path, "Agent Plugins manifest is missing");
-		return;
+		return { manifest: null, schema };
 	}
 	if (!statSync(path).isFile()) {
 		fail(path, "Agent Plugins manifest must be a regular file");
-		return;
+		return { manifest: null, schema };
 	}
 	const manifest = readJson(path);
 	if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
 		fail(path, "manifest must be a JSON object");
+		return { manifest: null, schema };
+	}
+	if (schema) {
+		for (const issue of validateJsonSchema(manifest, schema)) {
+			fail(path, `schema violation at ${issue.path}: ${issue.message}`);
+		}
+	}
+	if (manifest.name !== "pstack") fail(path, `name must be pstack, got ${manifest.name}`);
+	return { manifest, schema };
+}
+
+function validateManifestRegressionFixture(schema) {
+	if (!schema || !existsSync(manifestFixturePath)) {
+		if (!existsSync(manifestFixturePath)) fail(manifestFixturePath, "manifest schema regression fixture is missing");
 		return;
 	}
-	if (manifest.$schema !== agentPluginSchema) fail(path, `$schema must be ${agentPluginSchema}`);
-	if (manifest.name !== "pstack") fail(path, `name must be pstack, got ${manifest.name}`);
-	if (typeof manifest.name !== "string" || manifest.name.length < 1 || manifest.name.length > 64 || !/^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(manifest.name)) {
-		fail(path, "name does not satisfy Agent Plugins naming constraints");
-	}
-	for (const field of Object.keys(manifest)) {
-		if (!agentPluginFields.has(field)) fail(path, `unknown top-level field ${field}`);
-	}
-	for (const field of ["version", "description", "homepage", "repository", "license"]) {
-		if (field in manifest && typeof manifest[field] !== "string") fail(path, `${field} must be a string`);
-	}
-	if ("keywords" in manifest && (!Array.isArray(manifest.keywords) || manifest.keywords.some((keyword) => typeof keyword !== "string"))) {
-		fail(path, "keywords must be an array of strings");
-	}
-	if ("author" in manifest) {
-		const author = manifest.author;
-		if (!author || typeof author !== "object" || Array.isArray(author)) fail(path, "author must be an object");
-		else {
-			for (const field of Object.keys(author)) {
-				if (!["name", "email", "url"].includes(field)) fail(path, `author has unknown field ${field}`);
-				else if (typeof author[field] !== "string") fail(path, `author.${field} must be a string`);
-			}
-		}
-	}
-	if ("extensions" in manifest) {
-		const extensions = manifest.extensions;
-		if (!extensions || typeof extensions !== "object" || Array.isArray(extensions)) fail(path, "extensions must be an object");
-		else for (const [namespace, value] of Object.entries(extensions)) {
-			if (!value || typeof value !== "object" || Array.isArray(value)) fail(path, `extension ${namespace} must be an object`);
-		}
+	const fixture = readJson(manifestFixturePath);
+	if (!fixture) return;
+	const issues = validateJsonSchema(fixture, schema);
+	if (!issues.some((issue) => issue.message === "required property name is missing")) {
+		fail(manifestFixturePath, "schema regression fixture must fail for missing required name");
 	}
 }
 
-function validateRootPackageLayout() {
+function validateRootPackageLayout(manifest) {
 	const path = join(root, "package.json");
 	const pkg = readJson(path);
 	if (!pkg) return;
 	if (pkg.name !== "@0x7067/pstack") fail(path, `name ${pkg.name} must stay @0x7067/pstack`);
 	if (pkg.private !== true) fail(path, "private must be true; this is a Git-installed Pi package, not an npm publication");
+	if (!manifest || pkg.version !== manifest.version) fail(path, `version ${pkg.version} must match plugin.json version ${manifest?.version}`);
 	const skills = pkg.pi?.skills;
 	if (!Array.isArray(skills) || skills.length !== 1 || skills[0] !== "./skills") {
 		fail(path, "pi.skills must be [\"./skills\"]");
@@ -163,6 +433,9 @@ function validateRootPackageLayout() {
 	}
 	if (!Array.isArray(pkg.files) || !pkg.files.includes("profiles")) {
 		fail(path, "files must include profiles so the Pi settings presets ship with the package");
+	}
+	if (!Array.isArray(pkg.files) || !pkg.files.includes("schemas")) {
+		fail(path, "files must include schemas so the published Agent Plugins schema fixture ships with the package");
 	}
 	if (!Array.isArray(pkg.files) || !pkg.files.includes("UPSTREAM.md")) {
 		fail(path, "files must include UPSTREAM.md so the fork boundary ships with the package");
@@ -212,9 +485,7 @@ function validatePstackLiteProfile(skillDirs) {
 	const extra = [...selected].filter((name) => !expected.has(name)).sort();
 	if (missing.length) fail(profilePath, `skills must select the canonical pstack-lite skills, but misses ${missing.join(", ")}`);
 	if (extra.length) fail(profilePath, `skills must not select beyond pstack-lite, but also selects ${extra.join(", ")}`);
-	if (selected.has("poteto-mode")) {
-		fail(profilePath, "pstack-lite must not select poteto-mode");
-	}
+	if (selected.has("poteto-mode")) fail(profilePath, "pstack-lite must not select poteto-mode");
 }
 
 function validatePortableLayout() {
@@ -224,30 +495,50 @@ function validatePortableLayout() {
 	}
 }
 
+function readLegacyPolicy() {
+	if (!existsSync(legacyPolicyPath)) {
+		fail(legacyPolicyPath, "legacy invocation policy is missing");
+		return [];
+	}
+	const names = [];
+	for (const line of readFileSync(legacyPolicyPath, "utf8").split(/\r?\n/)) {
+		const name = line.trim();
+		if (!name || name.startsWith("#")) continue;
+		if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) fail(legacyPolicyPath, `invalid legacy skill name ${name}`);
+		if (names.includes(name)) fail(legacyPolicyPath, `duplicate legacy skill name ${name}`);
+		names.push(name);
+	}
+	return names;
+}
+
+function frontmatterField(text, field) {
+	const lines = text.split(/\r?\n/);
+	if (lines[0] !== "---") return undefined;
+	const end = lines.indexOf("---", 1);
+	if (end === -1) return undefined;
+	for (let index = 1; index < end; index += 1) {
+		const match = lines[index].match(new RegExp(`^${field.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}:\\s*(.*)$`));
+		if (match) return parseYamlScalar(match[1], "legacy installer output", index + 1);
+	}
+	return undefined;
+}
+
 function validateLegacyInstallScript(skillDirs) {
 	const path = join(root, "scripts", "install.sh");
 	if (!existsSync(path)) return;
+	const legacyDisabledSkills = readLegacyPolicy();
+	for (const name of legacyDisabledSkills) {
+		if (!skillDirs.includes(name)) fail(legacyPolicyPath, `legacy policy references missing canonical skill ${name}`);
+	}
 
 	const sandbox = mkdtempSync(join(tmpdir(), "pstack-install-"));
 	const agentSkillsDir = join(sandbox, "agents", "skills");
 	const claudeSkillsDir = join(sandbox, "claude", "skills");
-	let stdout;
-	try {
-		stdout = execFileSync(path, ["--dry-run"], {
-			encoding: "utf8",
-			env: {
-				...process.env,
-				PSTACK_AGENT_SKILLS_DIR: agentSkillsDir,
-				PSTACK_CLAUDE_SKILLS_DIR: claudeSkillsDir,
-			},
-		});
-	} catch (error) {
-		fail(path, `--dry-run failed: ${error instanceof Error ? error.message : String(error)}`);
-		return;
-	} finally {
-		rmSync(sandbox, { recursive: true, force: true });
-	}
-
+	const env = {
+		...process.env,
+		PSTACK_AGENT_SKILLS_DIR: agentSkillsDir,
+		PSTACK_CLAUDE_SKILLS_DIR: claudeSkillsDir,
+	};
 	const resolvedOrSelf = (candidate) => {
 		try {
 			return realpathSync(candidate);
@@ -255,38 +546,69 @@ function validateLegacyInstallScript(skillDirs) {
 			return candidate;
 		}
 	};
+	try {
+		let stdout;
+		try {
+			stdout = execFileSync(path, ["--dry-run"], { encoding: "utf8", env });
+		} catch (error) {
+			fail(path, `--dry-run failed: ${error instanceof Error ? error.message : String(error)}`);
+			return;
+		}
 
-	const copies = new Map();
-	const links = new Map();
-	for (const line of stdout.split(/\r?\n/)) {
-		const match = line.match(/^(copy|link) (.+) -> (.+)$/);
-		if (!match) continue;
-		if (match[1] === "copy") copies.set(resolvedOrSelf(match[2]), match[3]);
-		else links.set(match[2], match[3]);
-	}
+		const copies = new Map();
+		const links = new Map();
+		for (const line of stdout.split(/\r?\n/)) {
+			const match = line.match(/^(copy|link) (.+) -> (.+)$/);
+			if (!match) continue;
+			if (match[1] === "copy") copies.set(resolvedOrSelf(match[2]), match[3]);
+			else links.set(match[2], match[3]);
+		}
 
-	const sourceRoot = realpathSync(skillsRoot);
-	for (const name of skillDirs) {
-		if (copies.get(join(sourceRoot, name)) !== join(agentSkillsDir, name)) {
-			fail(path, `--dry-run does not install skills/${name} into the agent skills directory`);
+		const sourceRoot = realpathSync(skillsRoot);
+		for (const name of skillDirs) {
+			if (copies.get(join(sourceRoot, name)) !== join(agentSkillsDir, name)) {
+				fail(path, `--dry-run does not install skills/${name} into the agent skills directory`);
+			}
+			if (links.get(join(claudeSkillsDir, name)) !== join(agentSkillsDir, name)) {
+				fail(path, `--dry-run does not link skills/${name} into the Claude skills directory`);
+			}
 		}
-		if (links.get(join(claudeSkillsDir, name)) !== join(agentSkillsDir, name)) {
-			fail(path, `--dry-run does not link skills/${name} into the Claude skills directory`);
+		for (const [source, target] of copies) {
+			if (dirname(source) !== sourceRoot || !existsSync(join(source, "SKILL.md"))) {
+				fail(path, `--dry-run copies ${source}, which is not a canonical skill under skills/`);
+			}
+			if (dirname(target) !== agentSkillsDir) fail(path, `--dry-run installs outside the agent skills directory: ${target}`);
 		}
-	}
-	for (const [source, target] of copies) {
-		if (dirname(source) !== sourceRoot || !existsSync(join(source, "SKILL.md"))) {
-			fail(path, `--dry-run copies ${source}, which is not a canonical skill under skills/`);
+
+		try {
+			execFileSync(path, [], { env, stdio: "ignore" });
+		} catch (error) {
+			fail(path, `real install failed: ${error instanceof Error ? error.message : String(error)}`);
+			return;
 		}
-		if (dirname(target) !== agentSkillsDir) {
-			fail(path, `--dry-run installs outside the agent skills directory: ${target}`);
+		for (const name of skillDirs) {
+			const installedSkill = join(agentSkillsDir, name, "SKILL.md");
+			const claudeLink = join(claudeSkillsDir, name);
+			if (!existsSync(installedSkill)) fail(path, `real install did not copy skills/${name}`);
+			if (!existsSync(claudeLink) || !lstatSync(claudeLink).isSymbolicLink() || realpathSync(claudeLink) !== realpathSync(join(agentSkillsDir, name))) {
+				fail(path, `real install did not link skills/${name} into Claude's directory`);
+			}
 		}
+		for (const name of legacyDisabledSkills) {
+			const value = frontmatterField(readFileSync(join(agentSkillsDir, name, "SKILL.md"), "utf8"), "disable-model-invocation");
+			if (value !== true) fail(path, `legacy install did not restore automatic-invocation policy for ${name}`);
+		}
+		const legacyAutoInvokedValue = frontmatterField(readFileSync(join(agentSkillsDir, "unslop", "SKILL.md"), "utf8"), "disable-model-invocation");
+		if (legacyAutoInvokedValue !== undefined) fail(path, "legacy install changed the automatic-invocation policy for unslop");
+	} finally {
+		rmSync(sandbox, { recursive: true, force: true });
 	}
 }
 
 const skillDirs = validateSkillFrontmatter(skillsRoot);
-validateAgentPluginManifest();
-validateRootPackageLayout();
+const { manifest, schema } = validateAgentPluginManifest();
+validateManifestRegressionFixture(schema);
+validateRootPackageLayout(manifest);
 validatePstackLiteProfile(skillDirs);
 validatePortableLayout();
 validateLegacyInstallScript(skillDirs);
