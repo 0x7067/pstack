@@ -53,6 +53,10 @@ function hasOwn(object, key) {
 	return Object.prototype.hasOwnProperty.call(object, key);
 }
 
+function characterLength(value) {
+	return [...value].length;
+}
+
 function stripYamlComment(raw) {
 	let quote = null;
 	for (let index = 0; index < raw.length; index += 1) {
@@ -80,6 +84,99 @@ function stripYamlComment(raw) {
 	return raw.trim();
 }
 
+function splitYamlFlowItems(raw, path, lineNumber) {
+	const items = [];
+	let start = 0;
+	let depth = 0;
+	let quote = null;
+	for (let index = 0; index < raw.length; index += 1) {
+		const character = raw[index];
+		if (quote === "\"" && character === "\\") {
+			index += 1;
+			continue;
+		}
+		if (quote === "'" && character === "'" && raw[index + 1] === "'") {
+			index += 1;
+			continue;
+		}
+		if ((character === "\"" || character === "'") && !quote) {
+			quote = character;
+			continue;
+		}
+		if (character === quote) {
+			quote = null;
+			continue;
+		}
+		if (character === "{" || character === "[") depth += 1;
+		if (character === "}" || character === "]") depth -= 1;
+		if (character === "," && depth === 0) {
+			const item = raw.slice(start, index).trim();
+			if (item === "") fail(path, `empty flow-style YAML item on line ${lineNumber}`);
+			else items.push(item);
+			start = index + 1;
+		}
+	}
+	if (quote || depth !== 0) {
+		fail(path, `invalid flow-style YAML value on line ${lineNumber}`);
+		return [];
+	}
+	const finalItem = raw.slice(start).trim();
+	if (finalItem !== "") items.push(finalItem);
+	return items;
+}
+
+function parseYamlFlowMapping(value, path, lineNumber) {
+	if (!value.endsWith("}")) {
+		fail(path, `invalid flow-style YAML value on line ${lineNumber}`);
+		return undefined;
+	}
+	const mapping = Object.create(null);
+	const inner = value.slice(1, -1).trim();
+	if (inner === "") return mapping;
+	for (const item of splitYamlFlowItems(inner, path, lineNumber)) {
+		let separator = -1;
+		let quote = null;
+		let depth = 0;
+		for (let index = 0; index < item.length; index += 1) {
+			const character = item[index];
+			if (quote === "\"" && character === "\\") {
+				index += 1;
+				continue;
+			}
+			if (quote === "'" && character === "'" && item[index + 1] === "'") {
+				index += 1;
+				continue;
+			}
+			if ((character === "\"" || character === "'") && !quote) {
+				quote = character;
+				continue;
+			}
+			if (character === quote) {
+				quote = null;
+				continue;
+			}
+			if (character === "{" || character === "[") depth += 1;
+			if (character === "}" || character === "]") depth -= 1;
+			if (character === ":" && depth === 0) {
+				separator = index;
+				break;
+			}
+		}
+		if (separator === -1) {
+			fail(path, `invalid flow-style YAML mapping on line ${lineNumber}`);
+			continue;
+		}
+		const key = parseYamlScalar(item.slice(0, separator), path, lineNumber);
+		if (typeof key !== "string" || key === "") {
+			fail(path, `flow-style YAML mapping key must be a string on line ${lineNumber}`);
+			continue;
+		}
+		if (hasOwn(mapping, key)) fail(path, `duplicate metadata field ${key}`);
+		mapping[key] = parseYamlScalar(item.slice(separator + 1), path, lineNumber);
+	}
+	return mapping;
+}
+
 function parseYamlScalar(raw, path, lineNumber) {
 	const value = stripYamlComment(raw);
 	if (value === "") return null;
@@ -103,6 +200,7 @@ function parseYamlScalar(raw, path, lineNumber) {
 		return value.slice(1, -1).replace(/''/g, "'");
 	}
 	if (value.startsWith("{") || value.startsWith("[")) {
+		if (value.startsWith("{")) return parseYamlFlowMapping(value, path, lineNumber);
 		try {
 			return JSON.parse(value);
 		} catch (error) {
@@ -245,11 +343,11 @@ function validateSkillFrontmatter(skillsDir) {
 		if (typeof description !== "string" || description.length === 0) fail(path, "description must be a non-empty string");
 		if (typeof name === "string" && name !== directoryName) fail(path, `name ${name} must match directory ${directoryName}`);
 		if (typeof name === "string" && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) fail(path, `invalid Agent Skills name ${name}`);
-		if (typeof name === "string" && name.length > 64) fail(path, "name exceeds 64 characters");
-		if (typeof description === "string" && description.length > 1024) fail(path, "description exceeds 1024 characters");
+		if (typeof name === "string" && characterLength(name) > 64) fail(path, "name exceeds 64 characters");
+		if (typeof description === "string" && characterLength(description) > 1024) fail(path, "description exceeds 1024 characters");
 		if (hasOwn(fields, "license") && typeof fields.license !== "string") fail(path, "license must be a string");
 		if (hasOwn(fields, "compatibility")) {
-			if (typeof fields.compatibility !== "string" || fields.compatibility.length === 0 || fields.compatibility.length > 500) {
+			if (typeof fields.compatibility !== "string" || characterLength(fields.compatibility) === 0 || characterLength(fields.compatibility) > 500) {
 				fail(path, "compatibility must be a 1-500 character string");
 			}
 		}
