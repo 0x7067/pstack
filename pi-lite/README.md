@@ -8,13 +8,51 @@ This is not the full pstack catalog. It does not include `poteto-mode`, sticky m
 
 ## Install
 
-Pi 0.84.4 git sources clone the repository and load the **root** `package.json`. That manifest lists both `./skills` and `./pi-lite/skills`, so this command also loads the lite skills, including the promoted `/pause-safely`, `/hillclimb`, and `/session-pickup` entries:
+Pick **one** consume path. Never both.
+
+- Root package: `pi install git:github.com/0x7067/pstack@sha`, then a skills allowlist on that single source. Root `pi.skills` lists `./skills` and `./pi-lite/skills`; the allowlist is what stops copied names from loading twice.
+- Lite subset only: clone that SHA and install this nested package as a local path.
+
+Installing the root pstack package **and** `./pi-lite` together is refused. Overlapping skill names (`why`, `unslop`, `how`, and the other copied siblings) must not load twice. This is not an unsupported combination. It is refused.
+
+### Root package with a skills allowlist
 
 ```bash
 pi install git:github.com/0x7067/pstack@<sha>
 ```
 
-There is no git subpath syntax in Pi 0.84.4 (`git:host/repo@sha` has no `#pi-lite` or subdirectory field). Nested `pi-lite/package.json` is still a separate package root if you want **only** this subset. Clone that SHA and install the subdirectory as a **local path**:
+Pi 0.84.4 has no git subpath syntax. Narrow that one source in settings. Example allowlist for the lite trees only:
+
+```json
+{
+  "packages": [
+    {
+      "source": "git:github.com/0x7067/pstack@<sha>",
+      "skills": ["pi-lite/skills/**"]
+    }
+  ]
+}
+```
+
+Example allowlist for the full catalog plus the three promotions, without loading copied siblings twice:
+
+```json
+{
+  "packages": [
+    {
+      "source": "git:github.com/0x7067/pstack@<sha>",
+      "skills": [
+        "skills/**",
+        "pi-lite/skills/pause-safely/**",
+        "pi-lite/skills/hillclimb/**",
+        "pi-lite/skills/session-pickup/**"
+      ]
+    }
+  ]
+}
+```
+
+### Lite subset only (`./pi-lite`)
 
 ```bash
 git clone https://github.com/0x7067/pstack.git
@@ -27,9 +65,9 @@ Then `/reload` so this session picks up the skills.
 
 ### Pinning from my-pi-setup
 
-To get lite skills through the full package, pin the git URL and SHA of `0x7067/pstack` (root `pi.skills` already includes `./pi-lite/skills`).
+Pick the same single path. Never list the root git source and a `pi-lite` local path in the same `packages` array.
 
-To install **only** this subset, pin that same SHA, then install the `pi-lite` subdirectory as a local package. Identity for a local package is the resolved absolute path:
+Lite subset as a local package. Identity is the resolved absolute path:
 
 ```json
 {
@@ -49,7 +87,7 @@ Relative paths resolve against the settings file they appear in. From a checkout
 }
 ```
 
-Do not shrink root `package.json` `pi.skills` to this subset. The root package keeps `./skills` and also lists `./pi-lite/skills`.
+Do not shrink root `package.json` `pi.skills` to this subset. The root package keeps `./skills` and also lists `./pi-lite/skills`. Consume one of those trees through an allowlist, or consume this nested package, not both.
 
 ### Dual-harness copies
 

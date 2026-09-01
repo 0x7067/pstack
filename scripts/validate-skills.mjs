@@ -23,6 +23,11 @@ const promotedPiLiteSkills = ["pause-safely", "hillclimb", "session-pickup"];
 const expectedPiLiteSkills = [...copiedPiLiteSkills, ...promotedPiLiteSkills].sort();
 const forbiddenPiLiteSkills = ["poteto-mode"];
 
+// Consume-path invariant (Pi has no runtime plugin here): never install the
+// root pstack package and ./pi-lite together. Overlapping skill names must not
+// load twice. Fixtures under scripts/fixtures/ are the enforcement hook.
+const refusedDualPstackFixture = "scripts/fixtures/pi-settings-refused-dual-pstack.json";
+
 function filesUnder(path) {
 	const files = [];
 	for (const entry of readdirSync(path, { withFileTypes: true })) {
@@ -177,12 +182,68 @@ function validateInstallDoesNotCopyPiLite() {
 	if (/source_dir=.*pi-lite/.test(text)) fail(path, "must never copy pi-lite/ into ~/.agents/skills");
 }
 
+function packageSourcesFromSettings(settings) {
+	if (!settings || !Array.isArray(settings.packages)) return [];
+	const sources = [];
+	for (const entry of settings.packages) {
+		if (typeof entry === "string") sources.push(entry);
+		else if (entry && typeof entry === "object" && typeof entry.source === "string") sources.push(entry.source);
+	}
+	return sources;
+}
+
+function isRootPstackConsumeSource(source) {
+	const normalized = source.trim().replaceAll("\\", "/");
+	if (/^(?:git:|https?:\/\/)github\.com\/0x7067\/pstack(?:\.git)?(?:@|$)/i.test(normalized)) return true;
+	if (normalized === "." || normalized === "./") return true;
+	return false;
+}
+
+function isPiLiteLocalConsumeSource(source) {
+	if (isRootPstackConsumeSource(source)) return false;
+	const normalized = source.trim().replaceAll("\\", "/").replace(/\/+$/, "");
+	return /(^|\/)pi-lite$/.test(normalized);
+}
+
+function listsRefusedDualPstackConsume(sources) {
+	return sources.some(isRootPstackConsumeSource) && sources.some(isPiLiteLocalConsumeSource);
+}
+
+function validateExclusivePstackConsumePaths() {
+	const fixturesDir = join(root, "scripts", "fixtures");
+	const refusedPath = join(root, refusedDualPstackFixture);
+	if (!existsSync(refusedPath)) {
+		fail(refusedPath, "missing refused dual-source Pi settings fixture");
+		return;
+	}
+	if (!existsSync(fixturesDir)) return;
+	let sawRefusedDual = false;
+	for (const entry of readdirSync(fixturesDir)) {
+		if (!entry.endsWith(".json")) continue;
+		const path = join(fixturesDir, entry);
+		const settings = readJson(path);
+		if (!settings) continue;
+		const dual = listsRefusedDualPstackConsume(packageSourcesFromSettings(settings));
+		const refused = /refused/.test(entry);
+		if (refused) {
+			if (!dual) fail(path, "refused fixture must list both the root pstack source and ./pi-lite");
+			else sawRefusedDual = true;
+			continue;
+		}
+		if (dual) {
+			fail(path, "refused: do not list git:pstack and ./pi-lite together (overlapping skill names)");
+		}
+	}
+	if (!sawRefusedDual) fail(refusedPath, "refused dual-source fixture must be detected as listing both sources");
+}
+
 const skillDirs = validateSkillFrontmatter(skillsRoot);
 const piLiteSkillDirs = validateSkillFrontmatter(piLiteSkillsRoot);
 validateRootPackageLayout();
 validatePiLitePackageLayout();
 validatePiLiteSkillSet(piLiteSkillDirs);
 validateInstallDoesNotCopyPiLite();
+validateExclusivePstackConsumePaths();
 
 const skillMarkdownFiles = [
 	...filesUnder(skillsRoot),
