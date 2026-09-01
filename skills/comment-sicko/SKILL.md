@@ -1,7 +1,6 @@
 ---
 name: comment-sicko
 description: Read-only review that identifies stale, narrating, workaround, suppression, and commented-out code comments for deletion or structural replacement.
-disable-model-invocation: true
 ---
 
 # Comment Sicko

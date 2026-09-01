@@ -4,6 +4,8 @@ In this page you install the skills, pick which models pstack uses, and run your
 
 ## Install the skills
 
+The README's [Install section](../../README.md#install) owns the supported installation paths, including Agent Plugins-compatible clients and the legacy fallback. This page continues with Pi-specific setup below.
+
 ### Pi
 
 ```text
@@ -19,16 +21,6 @@ pi install .
 then `/reload` so this session picks up the skills.
 
 The README's [Pi install section](../../README.md#pi) owns the rest: how to switch to the smaller `pstack-lite` preset without loading the full package beside it, and what to do with the `~/.agents/skills` copies when you also use another harness.
-
-### Codex, Claude Code, oh-my-pi, and prime-agent
-
-From the pstack checkout, run:
-
-```text
-scripts/install.sh
-```
-
-The installer copies the skills to `~/.agents/skills` and creates Claude Code symlinks in `~/.claude/skills`.
 
 ## Pick your models
 

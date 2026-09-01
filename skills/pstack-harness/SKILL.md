@@ -1,7 +1,6 @@
 ---
 name: pstack-harness
 description: Internal compatibility contract for running pstack across agent harnesses.
-disable-model-invocation: true
 ---
 
 # Pstack harness adapter

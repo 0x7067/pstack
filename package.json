@@ -23,14 +23,18 @@
     "pi-package",
     "skills",
     "agent-skills",
+    "agent-plugin",
     "pstack",
     "poteto-mode"
   ],
   "files": [
+    "plugin.json",
     "skills",
     "profiles",
     "scripts",
+    "schemas",
     "docs",
+    "tests",
     "LICENSE",
     "README.md",
     "UPSTREAM.md"

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "pstack",
+  "version": "0.1.0",
+  "description": "Agent Skills for rigorous, parallelizable engineering work.",
+  "author": {
+    "name": "poteto",
+    "url": "https://x.com/poteto"
+  },
+  "homepage": "https://github.com/0x7067/pstack",
+  "repository": "https://github.com/0x7067/pstack",
+  "license": "MIT",
+  "keywords": [
+    "agent-plugin",
+    "agent-skills",
+    "engineering",
+    "pstack"
+  ]
+}

@@ -1,16 +1,16 @@
 # Upstream sync
 
-This repository is a portable fork of [Cursor's pstack plugin](https://github.com/cursor/plugins/tree/main/pstack). It keeps the Agent Skills and workflow playbooks, but it is not a Cursor plugin.
+This repository is an [Agent Plugins](https://agent-plugins.org/) 1.0.0 package and a portable fork of [Cursor's pstack plugin](https://github.com/cursor/plugins/tree/main/pstack). It keeps the Agent Skills and workflow playbooks, but it is not a Cursor plugin.
 
 ## Portable boundary
 
 The fork targets Pi, Codex, Claude Code, oh-my-pi, and prime-agent. The portable tree intentionally does not contain:
 
-- Cursor's `.cursor-plugin/plugin.json` manifest
+- Cursor's `.cursor-plugin/plugin.json` manifest. The root `plugin.json` is the Agent Plugins manifest.
 - Cursor-specific `agents/`
 - Cursor-only automations or model identifiers
 
-`skills/` is the source of truth. A skill that needs harness-specific behavior reads [`skills/pstack-harness/SKILL.md`](./skills/pstack-harness/SKILL.md). The root `package.json` describes the Pi package, `profiles/` contains Pi settings fragments, and `scripts/install.sh` installs the same skill tree for the other supported harnesses.
+`plugin.json` is the portable manifest, and `skills/` is the source of truth for the package's Agent Skills. A skill that needs harness-specific behavior reads [`skills/pstack-harness/SKILL.md`](./skills/pstack-harness/SKILL.md). The root `package.json` describes the Pi package, `profiles/` contains Pi settings fragments, and `scripts/install.sh` is a legacy fallback for clients that do not support Agent Plugins and only load user skill directories.
 
 Do not add a second copy of a skill for a profile. Add the canonical skill under `skills/`, then update the profile and its validator together.
 

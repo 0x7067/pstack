@@ -1,0 +1,44 @@
+# Legacy-only frontmatter policy.
+# The canonical skills/ tree follows the Agent Skills specification. The
+# legacy installer restores this Claude-compatible setting for these skills.
+architect
+arena
+automate-me
+blast-radius
+bro
+comment-sicko
+create-verification-skill
+figure-it-out
+interrogate
+maintain-verification-skill
+no-comments
+poteto-mode
+principle-boundary-discipline
+principle-build-the-lever
+principle-encode-lessons-in-structure
+principle-exhaust-the-design-space
+principle-experience-first
+principle-fix-root-causes
+principle-foundational-thinking
+principle-guard-the-context-window
+principle-laziness-protocol
+principle-make-operations-idempotent
+principle-migrate-callers-then-delete-legacy-apis
+principle-minimize-reader-load
+principle-model-the-domain
+principle-never-block-on-the-human
+principle-outcome-oriented-execution
+principle-prove-it-works
+principle-redesign-from-first-principles
+principle-separate-before-serializing-shared-state
+principle-sequence-verifiable-units
+principle-subtract-before-you-add
+principle-type-system-discipline
+pstack-harness
+recall
+reflect
+show-me-your-work
+swarm
+tdd
+teach
+technical-writing
