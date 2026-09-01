@@ -30,10 +30,10 @@ then `/reload` so this session picks up the skills.
 
 A smaller Pi-only subset lives in [`pi-lite/`](./pi-lite/). Pick **one** consume path. Never both.
 
-- Root package: `pi install git:github.com/0x7067/pstack@sha`, then a skills allowlist on that single source. Root `pi.skills` lists `./skills` and `./pi-lite/skills`; the allowlist is what stops copied names from loading twice.
+- Full catalog: `pi install git:github.com/0x7067/pstack@<sha>`. Root `pi.skills` is `./skills` only, so no pi-lite copy loads.
 - Lite subset only: clone that SHA and `pi install ./pi-lite`.
 
-Installing the root pstack package **and** `./pi-lite` together is refused. Overlapping skill names must not load twice.
+Consuming both together is unsupported: pi-lite copies skill names from `skills/`, and Pi will happily load them twice. `scripts/check-pi-consume-path.mjs` inspects your Pi settings and exits non-zero when it finds both sources.
 
 If you already ran `scripts/install.sh` and you still use Codex, Claude Code, oh-my-pi, or prime-agent, skip cleanup and keep those copies. They remain the source of truth for those harnesses. Claude Code's `~/.claude/skills` symlinks point at them. Pi auto-loads `~/.agents/skills` and those copies outrank the package, so dual-harness users keep being served from the copies until a later path split.
 

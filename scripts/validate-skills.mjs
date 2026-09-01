@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,10 +24,13 @@ const promotedPiLiteSkills = ["pause-safely", "hillclimb", "session-pickup"];
 const expectedPiLiteSkills = [...copiedPiLiteSkills, ...promotedPiLiteSkills].sort();
 const forbiddenPiLiteSkills = ["poteto-mode"];
 
-// Consume-path invariant (Pi has no runtime plugin here): never install the
-// root pstack package and ./pi-lite together. Overlapping skill names must not
-// load twice. Fixtures under scripts/fixtures/ are the enforcement hook.
-const refusedDualPstackFixture = "scripts/fixtures/pi-settings-refused-dual-pstack.json";
+// Consume-path invariant: the root package must expose only ./skills, so a
+// plain install can never load a pi-lite copy of the same name. Consuming both
+// the root package and ./pi-lite is unsupported; scripts/check-pi-consume-path.mjs
+// inspects real Pi settings for it and the fixtures below exercise that script.
+const fixturesDir = join(root, "scripts", "fixtures");
+const fixtureExpectationsPath = join(fixturesDir, "expectations.json");
+const consumePathChecker = join(root, "scripts", "check-pi-consume-path.mjs");
 
 function filesUnder(path) {
 	const files = [];
@@ -93,13 +97,8 @@ function validateRootPackageLayout() {
 	if (!pkg) return;
 	if (pkg.name !== "@0x7067/pstack") fail(path, `name ${pkg.name} must stay @0x7067/pstack`);
 	const skills = pkg.pi?.skills;
-	if (
-		!Array.isArray(skills) ||
-		skills.length !== 2 ||
-		skills[0] !== "./skills" ||
-		skills[1] !== "./pi-lite/skills"
-	) {
-		fail(path, "pi.skills must be [\"./skills\", \"./pi-lite/skills\"]");
+	if (!Array.isArray(skills) || skills.length !== 1 || skills[0] !== "./skills") {
+		fail(path, "pi.skills must be [\"./skills\"] so a plain install never loads a pi-lite copy twice");
 	}
 	if (!Array.isArray(pkg.keywords) || !pkg.keywords.includes("pi-package")) {
 		fail(path, "keywords must include pi-package");
@@ -149,6 +148,10 @@ function validatePiLiteSkillSet(skillDirs) {
 			fail(source, "copied skill is missing from skills/");
 			continue;
 		}
+		if (!existsSync(dest)) {
+			fail(dest, "copied skill is missing from pi-lite/skills/");
+			continue;
+		}
 		const sourceFiles = filesUnder(source).map((path) => relative(source, path)).sort();
 		const destFiles = filesUnder(dest).map((path) => relative(dest, path)).sort();
 		if (sourceFiles.join("\n") !== destFiles.join("\n")) {
@@ -167,7 +170,10 @@ function validatePiLiteSkillSet(skillDirs) {
 		const playbook = join(skillsRoot, "poteto-mode", "playbooks", `${name}.md`);
 		if (!existsSync(playbook)) fail(playbook, "original playbook must remain in skills/poteto-mode/playbooks/");
 		const skill = join(piLiteSkillsRoot, name, "SKILL.md");
-		if (!existsSync(skill)) fail(skill, "promoted playbook must ship as a Pi skill");
+		if (!existsSync(skill)) {
+			fail(skill, "promoted playbook must ship as a Pi skill");
+			continue;
+		}
 		const text = readFileSync(skill, "utf8");
 		if (!text.includes("Do not require `/poteto-mode` first")) {
 			fail(skill, "promoted skill must be standalone (not require /poteto-mode first)");
@@ -185,59 +191,38 @@ function validateInstallDoesNotCopyPiLite() {
 	if (/source_dir=.*pi-lite/.test(text)) fail(path, "must never copy pi-lite/ into ~/.agents/skills");
 }
 
-function packageSourcesFromSettings(settings) {
-	if (!settings || !Array.isArray(settings.packages)) return [];
-	const sources = [];
-	for (const entry of settings.packages) {
-		if (typeof entry === "string") sources.push(entry);
-		else if (entry && typeof entry === "object" && typeof entry.source === "string") sources.push(entry.source);
-	}
-	return sources;
-}
-
-function isRootPstackConsumeSource(source) {
-	const normalized = source.trim().replaceAll("\\", "/");
-	if (/^(?:git:|https?:\/\/)github\.com\/0x7067\/pstack(?:\.git)?(?:@|$)/i.test(normalized)) return true;
-	if (normalized === "." || normalized === "./") return true;
-	return false;
-}
-
-function isPiLiteLocalConsumeSource(source) {
-	if (isRootPstackConsumeSource(source)) return false;
-	const normalized = source.trim().replaceAll("\\", "/").replace(/\/+$/, "");
-	return /(^|\/)pi-lite$/.test(normalized);
-}
-
-function listsRefusedDualPstackConsume(sources) {
-	return sources.some(isRootPstackConsumeSource) && sources.some(isPiLiteLocalConsumeSource);
-}
-
 function validateExclusivePstackConsumePaths() {
-	const fixturesDir = join(root, "scripts", "fixtures");
-	const refusedPath = join(root, refusedDualPstackFixture);
-	if (!existsSync(refusedPath)) {
-		fail(refusedPath, "missing refused dual-source Pi settings fixture");
+	if (!existsSync(consumePathChecker)) {
+		fail(consumePathChecker, "consume-path checker is missing");
 		return;
 	}
-	if (!existsSync(fixturesDir)) return;
-	let sawRefusedDual = false;
-	for (const entry of readdirSync(fixturesDir)) {
-		if (!entry.endsWith(".json")) continue;
+	const expectations = existsSync(fixtureExpectationsPath) ? readJson(fixtureExpectationsPath) : null;
+	if (!expectations) {
+		fail(fixtureExpectationsPath, "missing fixture expectations manifest");
+		return;
+	}
+	const fixtures = readdirSync(fixturesDir)
+		.filter((entry) => entry.endsWith(".json") && entry !== "expectations.json")
+		.sort();
+	for (const name of Object.keys(expectations)) {
+		if (!fixtures.includes(name)) fail(join(fixturesDir, name), "expectations list a fixture that does not exist");
+	}
+	let sawRefused = false;
+	for (const entry of fixtures) {
 		const path = join(fixturesDir, entry);
-		const settings = readJson(path);
-		if (!settings) continue;
-		const dual = listsRefusedDualPstackConsume(packageSourcesFromSettings(settings));
-		const refused = /refused/.test(entry);
-		if (refused) {
-			if (!dual) fail(path, "refused fixture must list both the root pstack source and ./pi-lite");
-			else sawRefusedDual = true;
+		const expected = expectations[entry];
+		if (expected !== "accepted" && expected !== "refused") {
+			fail(path, "fixture needs an accepted/refused entry in expectations.json");
 			continue;
 		}
-		if (dual) {
-			fail(path, "refused: do not list git:pstack and ./pi-lite together (overlapping skill names)");
+		const result = spawnSync(process.execPath, [consumePathChecker, path], { encoding: "utf8" });
+		const actual = result.status === 0 ? "accepted" : result.status === 1 ? "refused" : "errored";
+		if (actual !== expected) {
+			fail(path, `check-pi-consume-path.mjs ${actual} this fixture, expected ${expected}`);
 		}
+		if (expected === "refused" && actual === "refused") sawRefused = true;
 	}
-	if (!sawRefusedDual) fail(refusedPath, "refused dual-source fixture must be detected as listing both sources");
+	if (!sawRefused) fail(fixturesDir, "need a fixture whose dual consume path the checker refuses");
 }
 
 const skillDirs = validateSkillFrontmatter(skillsRoot);
@@ -287,7 +272,7 @@ for (const path of [...skillMarkdownFiles, ...documentationFiles]) {
 	}
 }
 
-for (const relativePath of ["scripts/install.sh", "scripts/validate-skills.mjs"]) {
+for (const relativePath of ["scripts/install.sh", "scripts/validate-skills.mjs", "scripts/check-pi-consume-path.mjs"]) {
 	const path = join(root, relativePath);
 	if (!existsSync(path)) fail(path, "required script is missing");
 	else if (!(statSync(path).mode & 0o111)) fail(path, "script must be executable");

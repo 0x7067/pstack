@@ -10,47 +10,17 @@ This is not the full pstack catalog. It does not include `poteto-mode`, sticky m
 
 Pick **one** consume path. Never both.
 
-- Root package: `pi install git:github.com/0x7067/pstack@sha`, then a skills allowlist on that single source. Root `pi.skills` lists `./skills` and `./pi-lite/skills`; the allowlist is what stops copied names from loading twice.
+- Full catalog: `pi install git:github.com/0x7067/pstack@<sha>`. The root package exposes `./skills` only, so this never loads a pi-lite copy.
 - Lite subset only: clone that SHA and install this nested package as a local path.
 
-Installing the root pstack package **and** `./pi-lite` together is refused. Overlapping skill names (`why`, `unslop`, `how`, and the other copied siblings) must not load twice. This is not an unsupported combination. It is refused.
-
-### Root package with a skills allowlist
+Consuming the root pstack package **and** `./pi-lite` together is unsupported: the overlapping names (`why`, `unslop`, `how`, and the other copied siblings) would load twice. Pi does not reject it for you, so check your own settings:
 
 ```bash
-pi install git:github.com/0x7067/pstack@<sha>
+scripts/check-pi-consume-path.mjs            # ~/.pi/settings.json and ./.pi/settings.json
+scripts/check-pi-consume-path.mjs path/to/settings.json
 ```
 
-Pi 0.84.4 has no git subpath syntax. Narrow that one source in settings. Example allowlist for the lite trees only:
-
-```json
-{
-  "packages": [
-    {
-      "source": "git:github.com/0x7067/pstack@<sha>",
-      "skills": ["pi-lite/skills/**"]
-    }
-  ]
-}
-```
-
-Example allowlist for the full catalog plus the three promotions, without loading copied siblings twice:
-
-```json
-{
-  "packages": [
-    {
-      "source": "git:github.com/0x7067/pstack@<sha>",
-      "skills": [
-        "skills/**",
-        "pi-lite/skills/pause-safely/**",
-        "pi-lite/skills/hillclimb/**",
-        "pi-lite/skills/session-pickup/**"
-      ]
-    }
-  ]
-}
-```
+It exits non-zero and names both sources when a settings file lists them together.
 
 ### Lite subset only (`./pi-lite`)
 
@@ -87,7 +57,7 @@ Relative paths resolve against the settings file they appear in. From a checkout
 }
 ```
 
-Do not shrink root `package.json` `pi.skills` to this subset. The root package keeps `./skills` and also lists `./pi-lite/skills`. Consume one of those trees through an allowlist, or consume this nested package, not both.
+Do not add `./pi-lite/skills` to root `package.json` `pi.skills`. The root package exposes `./skills` only; this nested package is the sole way to load the lite subset.
 
 ### Dual-harness copies
 

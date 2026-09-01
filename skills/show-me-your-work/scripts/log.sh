@@ -16,6 +16,20 @@ if [ -n "$logdir" ] && [ "$logdir" != "." ] && [ ! -d "$logdir" ]; then
 	mkdir -p "$logdir"
 fi
 
+# Serialize header creation and the append: parallel phases share one log, and
+# an unserialized `>` from a second writer truncates rows the first just wrote.
+lockdir="$logfile.lock"
+attempt=0
+until mkdir "$lockdir" 2>/dev/null; do
+	attempt=$((attempt + 1))
+	if [ "$attempt" -ge 100 ]; then
+		printf 'log.sh: timed out waiting for %s; remove it if no writer is running\n' "$lockdir" >&2
+		exit 1
+	fi
+	sleep 0.1
+done
+trap 'rmdir "$lockdir" 2>/dev/null || true' EXIT
+
 if [ ! -f "$logfile" ]; then
 	printf 'ts\tphase\tdecision\twhy\tevidence\tresult\n' > "$logfile"
 fi
