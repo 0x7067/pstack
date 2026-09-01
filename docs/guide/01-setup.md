@@ -18,11 +18,7 @@ pi install .
 
 then `/reload` so this session picks up the skills.
 
-For a smaller Pi setup, replace the package entry with the filtered settings fragment in [`profiles/pstack-lite.json`](../../profiles/pstack-lite.json). Use it instead of the full package entry.
-
-If you already ran `scripts/install.sh` and you still use Codex, Claude Code, oh-my-pi, or prime-agent, skip cleanup and keep those copies. They remain the source of truth for those harnesses. Claude Code's `~/.claude/skills` symlinks point at them. Pi auto-loads `~/.agents/skills` and those copies outrank the package, so dual-harness users keep being served from the copies until a later path split.
-
-Pi-only users may remove the pstack copies under `~/.agents/skills` so the package is not shadowed.
+The README's [Pi install section](../../README.md#pi) owns the rest: how to switch to the smaller `pstack-lite` preset without loading the full package beside it, and what to do with the `~/.agents/skills` copies when you also use another harness.
 
 ### Codex, Claude Code, oh-my-pi, and prime-agent
 
