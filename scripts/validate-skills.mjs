@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, matchesGlob, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -21,7 +23,6 @@ const pstackLiteProfileSkills = [
 	"unslop",
 	"why",
 ].sort();
-const expectedProfilePatterns = pstackLiteProfileSkills.map((name) => `skills/${name}/**`);
 
 function filesUnder(path) {
 	const files = [];
@@ -131,14 +132,22 @@ function validatePstackLiteProfile(skillDirs) {
 		fail(profilePath, "skills must be an array of package-relative patterns");
 		return;
 	}
-	const actualPatterns = [...entry.skills].sort();
-	if (actualPatterns.join("\n") !== expectedProfilePatterns.join("\n")) {
-		fail(profilePath, "skills must exactly select the canonical pstack-lite skill set");
-	}
 	for (const name of pstackLiteProfileSkills) {
 		if (!skillDirs.includes(name)) fail(join(skillsRoot, name), "pstack-lite profile references a missing canonical skill");
 	}
-	if (entry.skills.some((pattern) => pattern.includes("poteto-mode"))) {
+
+	const selected = new Set();
+	for (const pattern of entry.skills) {
+		const matched = skillDirs.filter((name) => matchesGlob(`skills/${name}/SKILL.md`, pattern));
+		if (matched.length === 0) fail(profilePath, `skills pattern ${pattern} selects no canonical skill under skills/`);
+		for (const name of matched) selected.add(name);
+	}
+	const expected = new Set(pstackLiteProfileSkills.filter((name) => skillDirs.includes(name)));
+	const missing = [...expected].filter((name) => !selected.has(name));
+	const extra = [...selected].filter((name) => !expected.has(name)).sort();
+	if (missing.length) fail(profilePath, `skills must select the canonical pstack-lite skills, but misses ${missing.join(", ")}`);
+	if (extra.length) fail(profilePath, `skills must not select beyond pstack-lite, but also selects ${extra.join(", ")}`);
+	if (selected.has("poteto-mode")) {
 		fail(profilePath, "pstack-lite must not select poteto-mode");
 	}
 }
@@ -150,18 +159,61 @@ function validatePortableLayout() {
 	}
 }
 
-function validateInstallScript() {
+function validateInstallScript(skillDirs) {
 	const path = join(root, "scripts", "install.sh");
 	if (!existsSync(path)) return;
-	const text = readFileSync(path, "utf8");
-	if (!text.includes('script_dir/../skills')) fail(path, "must copy repo skills/");
+
+	const sandbox = mkdtempSync(join(tmpdir(), "pstack-install-"));
+	const agentSkillsDir = join(sandbox, "agents", "skills");
+	const claudeSkillsDir = join(sandbox, "claude", "skills");
+	let stdout;
+	try {
+		stdout = execFileSync(path, ["--dry-run"], {
+			encoding: "utf8",
+			env: {
+				...process.env,
+				PSTACK_AGENT_SKILLS_DIR: agentSkillsDir,
+				PSTACK_CLAUDE_SKILLS_DIR: claudeSkillsDir,
+			},
+		});
+	} catch (error) {
+		fail(path, `--dry-run failed: ${error instanceof Error ? error.message : String(error)}`);
+		return;
+	} finally {
+		rmSync(sandbox, { recursive: true, force: true });
+	}
+
+	const copies = new Map();
+	const links = new Map();
+	for (const line of stdout.split(/\r?\n/)) {
+		const match = line.match(/^(copy|link) (.+) -> (.+)$/);
+		if (match) (match[1] === "copy" ? copies : links).set(match[2], match[3]);
+	}
+
+	const sourceRoot = realpathSync(skillsRoot);
+	for (const name of skillDirs) {
+		if (copies.get(join(sourceRoot, name)) !== join(agentSkillsDir, name)) {
+			fail(path, `--dry-run does not install skills/${name} into the agent skills directory`);
+		}
+		if (links.get(join(claudeSkillsDir, name)) !== join(agentSkillsDir, name)) {
+			fail(path, `--dry-run does not link skills/${name} into the Claude skills directory`);
+		}
+	}
+	for (const [source, target] of copies) {
+		if (dirname(source) !== sourceRoot || !existsSync(join(source, "SKILL.md"))) {
+			fail(path, `--dry-run copies ${source}, which is not a canonical skill under skills/`);
+		}
+		if (dirname(target) !== agentSkillsDir) {
+			fail(path, `--dry-run installs outside the agent skills directory: ${target}`);
+		}
+	}
 }
 
 const skillDirs = validateSkillFrontmatter(skillsRoot);
 validateRootPackageLayout();
 validatePstackLiteProfile(skillDirs);
 validatePortableLayout();
-validateInstallScript();
+validateInstallScript(skillDirs);
 
 const skillMarkdownFiles = filesUnder(skillsRoot).filter((path) => path.endsWith(".md"));
 const documentationFiles = [
