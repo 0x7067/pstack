@@ -211,7 +211,9 @@ function parseYamlScalar(raw, path, lineNumber) {
 	if (value === "null" || value === "~") return null;
 	if (value === "true") return true;
 	if (value === "false") return false;
-	if (/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(value)) return Number(value);
+	if (/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(value)) return Number(value);
+	if (/^[+-]?\.inf$/i.test(value)) return value.startsWith("-") ? -Infinity : Infinity;
+	if (/^\.nan$/i.test(value)) return Number.NaN;
 	return value;
 }
 
@@ -237,18 +239,22 @@ function parseBlockScalar(lines, start, end, marker, path) {
 	}
 	const indent = Number.isFinite(minimumIndent) ? minimumIndent : 0;
 	const unindented = content.map((line) => line === "" ? "" : line.slice(indent));
+	const hasNonBlankLine = unindented.some((line) => line !== "");
 	let value;
 	if (marker.startsWith("|")) {
 		value = unindented.join("\n");
 	} else {
 		value = "";
 		for (const line of unindented) {
-			if (value === "") value = line;
-			else if (line === "" || value.endsWith("\n")) value += `\n${line}`;
-			else value += ` ${line}`;
+			if (line === "") {
+				if (value !== "") value += "\n";
+			} else {
+				if (value !== "" && !value.endsWith("\n")) value += " ";
+				value += line;
+			}
 		}
 	}
-	if (content.length === 0) value = "";
+	if (!hasNonBlankLine) value = "";
 	else if (marker.endsWith("-")) value = value.replace(/\n+$/, "");
 	else if (marker.endsWith("+")) value += "\n";
 	else value = value.replace(/\n+$/, "") + "\n";
