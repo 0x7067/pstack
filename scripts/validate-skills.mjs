@@ -248,8 +248,10 @@ function parseBlockScalar(lines, start, end, marker, path) {
 			else value += ` ${line}`;
 		}
 	}
-	if (!marker.endsWith("-")) value += "\n";
-	if (marker.endsWith("+")) value += "\n";
+	if (content.length === 0) value = "";
+	else if (marker.endsWith("-")) value = value.replace(/\n+$/, "");
+	else if (marker.endsWith("+")) value += "\n";
+	else value = value.replace(/\n+$/, "") + "\n";
 	return { value, nextIndex: index };
 }
 
