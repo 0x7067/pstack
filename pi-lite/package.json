@@ -1,0 +1,26 @@
+{
+  "name": "@0x7067/pstack-pi-lite",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Small Pi-only subset of pstack skills: why, unslop, pause-safely, hillclimb, session-pickup, and their cited siblings.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0x7067/pstack.git",
+    "directory": "pi-lite"
+  },
+  "homepage": "https://github.com/0x7067/pstack/tree/main/pi-lite",
+  "bugs": {
+    "url": "https://github.com/0x7067/pstack/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "skills",
+    "agent-skills",
+    "pstack",
+    "pi-lite"
+  ],
+  "pi": {
+    "skills": ["./skills"]
+  }
+}

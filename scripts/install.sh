@@ -2,6 +2,9 @@
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# Copy only repo skills/ into ~/.agents/skills for Codex, Claude Code,
+# oh-my-pi, and prime-agent. pi-lite/ is a nested Pi package and must
+# never be copied here; leftover copies would shadow Pi packages.
 source_dir=$(cd "$script_dir/../skills" && pwd)
 agent_skills_dir=${PSTACK_AGENT_SKILLS_DIR:-"$HOME/.agents/skills"}
 claude_skills_dir=${PSTACK_CLAUDE_SKILLS_DIR:-"$HOME/.claude/skills"}

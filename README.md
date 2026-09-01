@@ -28,6 +28,8 @@ pi install .
 
 then `/reload` so this session picks up the skills.
 
+A smaller Pi-only subset lives in [`pi-lite/`](./pi-lite/). Pi 0.84.4 git installs load this root `package.json`, so `pi install git:github.com/0x7067/pstack@sha` is the full catalog, not the lite subset. Clone that SHA and `pi install ./pi-lite`.
+
 If you already ran `scripts/install.sh` and you still use Codex, Claude Code, oh-my-pi, or prime-agent, skip cleanup and keep those copies. They remain the source of truth for those harnesses. Claude Code's `~/.claude/skills` symlinks point at them. Pi auto-loads `~/.agents/skills` and those copies outrank the package, so dual-harness users keep being served from the copies until a later path split.
 
 Pi-only users may remove the pstack copies under `~/.agents/skills` so the package is not shadowed.
