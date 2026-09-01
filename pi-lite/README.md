@@ -17,10 +17,10 @@ Consuming the root pstack package **and** `./pi-lite` together is unsupported: t
 
 ```bash
 scripts/check-pi-consume-path.mjs            # ~/.pi/settings.json and ./.pi/settings.json
-scripts/check-pi-consume-path.mjs path/to/settings.json
+scripts/check-pi-consume-path.mjs a/settings.json b/settings.json
 ```
 
-It exits non-zero and names both sources when a settings file lists them together.
+Sources are pooled across every settings file passed, so a root install in one file and `./pi-lite` in another is still refused. Local paths resolve against the settings file listing them and are identified by their `package.json` name, so an absolute checkout path counts as the root package.
 
 ### Lite subset only (`./pi-lite`)
 

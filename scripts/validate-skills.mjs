@@ -197,32 +197,44 @@ function validateExclusivePstackConsumePaths() {
 		return;
 	}
 	const expectations = existsSync(fixtureExpectationsPath) ? readJson(fixtureExpectationsPath) : null;
-	if (!expectations) {
-		fail(fixtureExpectationsPath, "missing fixture expectations manifest");
+	if (!Array.isArray(expectations?.scenarios)) {
+		fail(fixtureExpectationsPath, "missing fixture expectations manifest with a scenarios array");
 		return;
 	}
 	const fixtures = readdirSync(fixturesDir)
 		.filter((entry) => entry.endsWith(".json") && entry !== "expectations.json")
 		.sort();
-	for (const name of Object.keys(expectations)) {
-		if (!fixtures.includes(name)) fail(join(fixturesDir, name), "expectations list a fixture that does not exist");
-	}
+	const exercised = new Set();
 	let sawRefused = false;
-	for (const entry of fixtures) {
-		const path = join(fixturesDir, entry);
-		const expected = expectations[entry];
-		if (expected !== "accepted" && expected !== "refused") {
-			fail(path, "fixture needs an accepted/refused entry in expectations.json");
+	for (const scenario of expectations.scenarios) {
+		const names = Array.isArray(scenario?.settings) ? scenario.settings : [];
+		const label = join(fixturesDir, names.join(" + ") || "<empty scenario>");
+		if (!names.length || (scenario.expect !== "accepted" && scenario.expect !== "refused")) {
+			fail(label, "scenario needs a settings list and an accepted/refused expectation");
 			continue;
 		}
-		const result = spawnSync(process.execPath, [consumePathChecker, path], { encoding: "utf8" });
-		const actual = result.status === 0 ? "accepted" : result.status === 1 ? "refused" : "errored";
-		if (actual !== expected) {
-			fail(path, `check-pi-consume-path.mjs ${actual} this fixture, expected ${expected}`);
+		const missing = names.filter((name) => !fixtures.includes(name));
+		if (missing.length) {
+			fail(label, `scenario lists fixtures that do not exist: ${missing.join(", ")}`);
+			continue;
 		}
-		if (expected === "refused" && actual === "refused") sawRefused = true;
+		for (const name of names) exercised.add(name);
+		const result = spawnSync(
+			process.execPath,
+			[consumePathChecker, ...names.map((name) => join(fixturesDir, name))],
+			{ encoding: "utf8" },
+		);
+		const actual = result.status === 0 ? "accepted" : result.status === 1 ? "refused" : "errored";
+		if (actual !== scenario.expect) {
+			fail(label, `check-pi-consume-path.mjs ${actual} this scenario, expected ${scenario.expect}`);
+		} else if (actual === "refused") {
+			sawRefused = true;
+		}
 	}
-	if (!sawRefused) fail(fixturesDir, "need a fixture whose dual consume path the checker refuses");
+	for (const name of fixtures) {
+		if (!exercised.has(name)) fail(join(fixturesDir, name), "fixture is not used by any scenario in expectations.json");
+	}
+	if (!sawRefused) fail(fixturesDir, "need a scenario whose dual consume path the checker refuses");
 }
 
 const skillDirs = validateSkillFrontmatter(skillsRoot);

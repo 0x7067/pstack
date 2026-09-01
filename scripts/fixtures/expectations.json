@@ -1,5 +1,9 @@
 {
-  "pi-settings-ok-root.json": "accepted",
-  "pi-settings-ok-pi-lite.json": "accepted",
-  "pi-settings-refused-dual-pstack.json": "refused"
+  "scenarios": [
+    { "settings": ["pi-settings-ok-root.json"], "expect": "accepted" },
+    { "settings": ["pi-settings-ok-pi-lite.json"], "expect": "accepted" },
+    { "settings": ["pi-settings-refused-dual-pstack.json"], "expect": "refused" },
+    { "settings": ["pi-settings-refused-local-paths.json"], "expect": "refused" },
+    { "settings": ["pi-settings-ok-root.json", "pi-settings-ok-pi-lite.json"], "expect": "refused" }
+  ]
 }
