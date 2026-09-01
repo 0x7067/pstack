@@ -104,6 +104,9 @@ function validateRootPackageLayout() {
 	if (!Array.isArray(pkg.keywords) || !pkg.keywords.includes("pi-package")) {
 		fail(path, "keywords must include pi-package");
 	}
+	if (!Array.isArray(pkg.files) || !pkg.files.includes("pi-lite")) {
+		fail(path, "files must include pi-lite so a pack contains ./pi-lite/skills");
+	}
 }
 
 function validatePiLitePackageLayout() {
