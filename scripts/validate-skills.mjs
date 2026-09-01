@@ -1,36 +1,27 @@
-#!/usr/bin/env bun
-import { spawnSync } from "node:child_process";
+#!/usr/bin/env node
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const skillsRoot = join(root, "skills");
-const piLiteRoot = join(root, "pi-lite");
-const piLiteSkillsRoot = join(piLiteRoot, "skills");
+const profilePath = join(root, "profiles", "pstack-lite.json");
 const errors = [];
 const fail = (path, message) => errors.push(`${relative(root, path)}: ${message}`);
 
-const copiedPiLiteSkills = [
-	"why",
-	"unslop",
-	"pstack-harness",
+const pstackLiteProfileSkills = [
 	"how",
-	"principle-prove-it-works",
+	"hillclimb",
+	"pause-safely",
 	"principle-guard-the-context-window",
+	"principle-prove-it-works",
+	"pstack-harness",
+	"session-pickup",
 	"show-me-your-work",
-];
-const promotedPiLiteSkills = ["pause-safely", "hillclimb", "session-pickup"];
-const expectedPiLiteSkills = [...copiedPiLiteSkills, ...promotedPiLiteSkills].sort();
-const forbiddenPiLiteSkills = ["poteto-mode"];
-
-// Consume-path invariant: the root package must expose only ./skills, so a
-// plain install can never load a pi-lite copy of the same name. Consuming both
-// the root package and ./pi-lite is unsupported; scripts/check-pi-consume-path.mjs
-// inspects real Pi settings for it and the fixtures below exercise that script.
-const fixturesDir = join(root, "scripts", "fixtures");
-const fixtureExpectationsPath = join(fixturesDir, "expectations.json");
-const consumePathChecker = join(root, "scripts", "check-pi-consume-path.mjs");
+	"unslop",
+	"why",
+].sort();
+const expectedProfilePatterns = pstackLiteProfileSkills.map((name) => `skills/${name}/**`);
 
 function filesUnder(path) {
 	const files = [];
@@ -96,150 +87,86 @@ function validateRootPackageLayout() {
 	const pkg = readJson(path);
 	if (!pkg) return;
 	if (pkg.name !== "@0x7067/pstack") fail(path, `name ${pkg.name} must stay @0x7067/pstack`);
+	if (pkg.private !== true) fail(path, "private must be true; this is a Git-installed Pi package, not an npm publication");
 	const skills = pkg.pi?.skills;
 	if (!Array.isArray(skills) || skills.length !== 1 || skills[0] !== "./skills") {
-		fail(path, "pi.skills must be [\"./skills\"] so a plain install never loads a pi-lite copy twice");
+		fail(path, "pi.skills must be [\"./skills\"]");
 	}
 	if (!Array.isArray(pkg.keywords) || !pkg.keywords.includes("pi-package")) {
 		fail(path, "keywords must include pi-package");
 	}
-	if (!Array.isArray(pkg.files) || !pkg.files.includes("pi-lite")) {
-		fail(path, "files must include pi-lite so a pack contains ./pi-lite/skills");
+	if (!Array.isArray(pkg.files) || !pkg.files.includes("profiles")) {
+		fail(path, "files must include profiles so the Pi settings presets ship with the package");
+	}
+	if (!Array.isArray(pkg.files) || !pkg.files.includes("UPSTREAM.md")) {
+		fail(path, "files must include UPSTREAM.md so the fork boundary ships with the package");
 	}
 }
 
-function validatePiLitePackageLayout() {
-	const path = join(piLiteRoot, "package.json");
-	if (!existsSync(path)) {
-		fail(path, "pi-lite package.json is missing");
+function validatePstackLiteProfile(skillDirs) {
+	if (!existsSync(profilePath)) {
+		fail(profilePath, "pstack-lite profile is missing");
 		return;
 	}
-	const pkg = readJson(path);
-	if (!pkg) return;
-	if (pkg.name === "@0x7067/pstack") fail(path, "name must be distinct from the root package");
-	if (pkg.name !== "@0x7067/pstack-pi-lite") fail(path, `name ${pkg.name} must be @0x7067/pstack-pi-lite`);
-	if (pkg.private !== true) fail(path, "private must be true (no npm publish)");
-	if (!Array.isArray(pkg.keywords) || !pkg.keywords.includes("pi-package")) {
-		fail(path, "keywords must include pi-package");
+	const profile = readJson(profilePath);
+	if (!profile) return;
+	if (!Array.isArray(profile.packages) || profile.packages.length !== 1) {
+		fail(profilePath, "packages must contain one filtered root-package entry");
+		return;
 	}
-	if (pkg.pi?.extensions) fail(path, "must not declare a TypeScript extension");
-	const skills = pkg.pi?.skills;
-	if (!Array.isArray(skills) || skills.length !== 1 || skills[0] !== "./skills") {
-		fail(path, "pi.skills must point at this package's ./skills, not the repo skills/");
+	const entry = profile.packages[0];
+	if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+		fail(profilePath, "the profile package entry must be an object");
+		return;
 	}
-	if (existsSync(join(piLiteRoot, "extensions"))) fail(join(piLiteRoot, "extensions"), "must not ship a Pi extension");
-	for (const file of filesUnder(piLiteRoot)) {
-		if (file.endsWith(".ts") || file.endsWith(".js")) fail(file, "pi-lite must not include a TypeScript extension");
+	if (typeof entry.source !== "string" || !/^git:github\.com\/0x7067\/pstack(?:@[^/]+)?$/.test(entry.source)) {
+		fail(profilePath, "source must be the root git:github.com/0x7067/pstack package");
 	}
-}
-
-function validatePiLiteSkillSet(skillDirs) {
-	const missing = expectedPiLiteSkills.filter((name) => !skillDirs.includes(name));
-	const extra = skillDirs.filter((name) => !expectedPiLiteSkills.includes(name));
-	for (const name of missing) fail(join(piLiteSkillsRoot, name), "expected pi-lite skill is missing");
-	for (const name of extra) fail(join(piLiteSkillsRoot, name), "unexpected skill; pi-lite is a closed subset");
-	for (const name of forbiddenPiLiteSkills) {
-		if (skillDirs.includes(name)) fail(join(piLiteSkillsRoot, name), "must not include poteto-mode or its catalog");
-	}
-	for (const name of copiedPiLiteSkills) {
-		const source = join(skillsRoot, name);
-		const dest = join(piLiteSkillsRoot, name);
-		if (!existsSync(source)) {
-			fail(source, "copied skill is missing from skills/");
-			continue;
-		}
-		if (!existsSync(dest)) {
-			fail(dest, "copied skill is missing from pi-lite/skills/");
-			continue;
-		}
-		const sourceFiles = filesUnder(source).map((path) => relative(source, path)).sort();
-		const destFiles = filesUnder(dest).map((path) => relative(dest, path)).sort();
-		if (sourceFiles.join("\n") !== destFiles.join("\n")) {
-			fail(dest, "copied skill tree file list must match skills/");
-			continue;
-		}
-		for (const relativePath of sourceFiles) {
-			const from = join(source, relativePath);
-			const to = join(dest, relativePath);
-			if (readFileSync(from, "utf8") !== readFileSync(to, "utf8")) {
-				fail(to, "copied skill file must match skills/");
-			}
+	for (const resourceType of ["extensions", "prompts", "themes"]) {
+		if (!Array.isArray(entry[resourceType]) || entry[resourceType].length !== 0) {
+			fail(profilePath, `${resourceType} must be [] in the skills-only profile`);
 		}
 	}
-	for (const name of promotedPiLiteSkills) {
-		const playbook = join(skillsRoot, "poteto-mode", "playbooks", `${name}.md`);
-		if (!existsSync(playbook)) fail(playbook, "original playbook must remain in skills/poteto-mode/playbooks/");
-		const skill = join(piLiteSkillsRoot, name, "SKILL.md");
-		if (!existsSync(skill)) {
-			fail(skill, "promoted playbook must ship as a Pi skill");
-			continue;
-		}
-		const text = readFileSync(skill, "utf8");
-		if (!text.includes("Do not require `/poteto-mode` first")) {
-			fail(skill, "promoted skill must be standalone (not require /poteto-mode first)");
-		}
-		if (existsSync(join(skillsRoot, name, "SKILL.md"))) {
-			fail(join(skillsRoot, name), "do not copy promotions into skills/");
-		}
+	if (!Array.isArray(entry.skills) || entry.skills.some((pattern) => typeof pattern !== "string")) {
+		fail(profilePath, "skills must be an array of package-relative patterns");
+		return;
+	}
+	const actualPatterns = [...entry.skills].sort();
+	if (actualPatterns.join("\n") !== expectedProfilePatterns.join("\n")) {
+		fail(profilePath, "skills must exactly select the canonical pstack-lite skill set");
+	}
+	for (const name of pstackLiteProfileSkills) {
+		if (!skillDirs.includes(name)) fail(join(skillsRoot, name), "pstack-lite profile references a missing canonical skill");
+	}
+	if (entry.skills.some((pattern) => pattern.includes("poteto-mode"))) {
+		fail(profilePath, "pstack-lite must not select poteto-mode");
 	}
 }
 
-function validateInstallDoesNotCopyPiLite() {
+function validatePortableLayout() {
+	for (const relativePath of [".cursor-plugin", "agents", "automations"]) {
+		const path = join(root, relativePath);
+		if (existsSync(path)) fail(path, "portable fork must not include Cursor-only packaging or automation");
+	}
+}
+
+function validateInstallScript() {
 	const path = join(root, "scripts", "install.sh");
+	if (!existsSync(path)) return;
 	const text = readFileSync(path, "utf8");
-	if (!text.includes('script_dir/../skills')) fail(path, "must copy repo skills/, not another tree");
-	if (/source_dir=.*pi-lite/.test(text)) fail(path, "must never copy pi-lite/ into ~/.agents/skills");
-}
-
-function validateExclusivePstackConsumePaths() {
-	if (!existsSync(consumePathChecker)) {
-		fail(consumePathChecker, "consume-path checker is missing");
-		return;
-	}
-	const expectations = existsSync(fixtureExpectationsPath) ? readJson(fixtureExpectationsPath) : null;
-	if (!expectations) {
-		fail(fixtureExpectationsPath, "missing fixture expectations manifest");
-		return;
-	}
-	const fixtures = readdirSync(fixturesDir)
-		.filter((entry) => entry.endsWith(".json") && entry !== "expectations.json")
-		.sort();
-	for (const name of Object.keys(expectations)) {
-		if (!fixtures.includes(name)) fail(join(fixturesDir, name), "expectations list a fixture that does not exist");
-	}
-	let sawRefused = false;
-	for (const entry of fixtures) {
-		const path = join(fixturesDir, entry);
-		const expected = expectations[entry];
-		if (expected !== "accepted" && expected !== "refused") {
-			fail(path, "fixture needs an accepted/refused entry in expectations.json");
-			continue;
-		}
-		const result = spawnSync(process.execPath, [consumePathChecker, path], { encoding: "utf8" });
-		const actual = result.status === 0 ? "accepted" : result.status === 1 ? "refused" : "errored";
-		if (actual !== expected) {
-			fail(path, `check-pi-consume-path.mjs ${actual} this fixture, expected ${expected}`);
-		}
-		if (expected === "refused" && actual === "refused") sawRefused = true;
-	}
-	if (!sawRefused) fail(fixturesDir, "need a fixture whose dual consume path the checker refuses");
+	if (!text.includes('script_dir/../skills')) fail(path, "must copy repo skills/");
 }
 
 const skillDirs = validateSkillFrontmatter(skillsRoot);
-const piLiteSkillDirs = validateSkillFrontmatter(piLiteSkillsRoot);
 validateRootPackageLayout();
-validatePiLitePackageLayout();
-validatePiLiteSkillSet(piLiteSkillDirs);
-validateInstallDoesNotCopyPiLite();
-validateExclusivePstackConsumePaths();
+validatePstackLiteProfile(skillDirs);
+validatePortableLayout();
+validateInstallScript();
 
-const skillMarkdownFiles = [
-	...filesUnder(skillsRoot),
-	...(existsSync(piLiteSkillsRoot) ? filesUnder(piLiteSkillsRoot) : []),
-].filter((path) => path.endsWith(".md"));
+const skillMarkdownFiles = filesUnder(skillsRoot).filter((path) => path.endsWith(".md"));
 const documentationFiles = [
 	join(root, "README.md"),
-	join(piLiteRoot, "README.md"),
+	join(root, "UPSTREAM.md"),
 	...filesUnder(join(root, "docs")),
 ].filter((path) => path.endsWith(".md"));
 const forbidden = [
@@ -272,7 +199,7 @@ for (const path of [...skillMarkdownFiles, ...documentationFiles]) {
 	}
 }
 
-for (const relativePath of ["scripts/install.sh", "scripts/validate-skills.mjs", "scripts/check-pi-consume-path.mjs"]) {
+for (const relativePath of ["scripts/install.sh", "scripts/validate-skills.mjs"]) {
 	const path = join(root, relativePath);
 	if (!existsSync(path)) fail(path, "required script is missing");
 	else if (!(statSync(path).mode & 0o111)) fail(path, "script must be executable");
@@ -284,5 +211,5 @@ if (errors.length) {
 }
 
 console.log(
-	`validated ${skillDirs.length} skills, ${piLiteSkillDirs.length} pi-lite skills, and ${skillMarkdownFiles.length + documentationFiles.length} markdown files`,
+	`validated ${skillDirs.length} skills and pstack-lite profile (${pstackLiteProfileSkills.length} skills), plus ${skillMarkdownFiles.length + documentationFiles.length} markdown files`,
 );

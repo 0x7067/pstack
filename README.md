@@ -12,6 +12,12 @@ there's a growing sense that ai writes too much slop code. i agree. i don't want
 
 fork it. improve it. make it yours. PRs are welcome! 
 
+## scope
+
+This is a portable fork of [Cursor's pstack plugin](https://github.com/cursor/plugins/tree/main/pstack). It keeps the Agent Skills and workflow playbooks for Pi, Codex, Claude Code, oh-my-pi, and prime-agent. It intentionally does not ship Cursor's plugin manifest, custom agents, or Cursor-only automations.
+
+`skills/` is the source of truth. Read [UPSTREAM.md](./UPSTREAM.md) before importing changes from the original repository.
+
 ## install
 
 ### Pi
@@ -28,12 +34,10 @@ pi install .
 
 then `/reload` so this session picks up the skills.
 
-A smaller Pi-only subset lives in [`pi-lite/`](./pi-lite/). Pick **one** consume path. Never both.
+A smaller Pi-only preset lives in [`profiles/pstack-lite.json`](./profiles/pstack-lite.json). It filters the root package, so it has one skill tree and one package source.
 
-- Full catalog: `pi install git:github.com/0x7067/pstack@<sha>`. Root `pi.skills` is `./skills` only, so no pi-lite copy loads.
-- Lite subset only: clone that SHA and `pi install ./pi-lite`.
-
-Consuming both together is unsupported: pi-lite copies skill names from `skills/`, and Pi will happily load them twice. `scripts/check-pi-consume-path.mjs` inspects your Pi settings and exits non-zero when it finds both sources.
+- Full catalog: `pi install git:github.com/0x7067/pstack@<sha>`.
+- Lite preset: install the root package, then replace its package entry in Pi settings with the filtered entry from [`profiles/pstack-lite.json`](./profiles/pstack-lite.json). Replace the source with the pinned SHA you installed. Do not add the preset beside an unfiltered pstack entry.
 
 If you already ran `scripts/install.sh` and you still use Codex, Claude Code, oh-my-pi, or prime-agent, skip cleanup and keep those copies. They remain the source of truth for those harnesses. Claude Code's `~/.claude/skills` symlinks point at them. Pi auto-loads `~/.agents/skills` and those copies outrank the package, so dual-harness users keep being served from the copies until a later path split.
 
@@ -153,6 +157,9 @@ the full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/po
 | [`/poteto-mode`](./skills/poteto-mode/SKILL.md) | default entry point for any non-trivial task. |
 | [`/how`](./skills/how/SKILL.md) | you want a walkthrough of how a subsystem works. |
 | [`/why`](./skills/why/SKILL.md) | you want to know why something was built this way. discovers available MCPs at run time and queries each evidence category in parallel (source control, issue tracker, long-form docs, real-time chat, infra observability, error tracking, analytics warehouse). |
+| [`/hillclimb`](./skills/hillclimb/SKILL.md) | you want sustained, measured improvement of one metric. |
+| [`/pause-safely`](./skills/pause-safely/SKILL.md) | you need to stop work with a resume checkpoint. |
+| [`/session-pickup`](./skills/session-pickup/SKILL.md) | you are taking over work from a prior agent or session. |
 | [`/recall`](./skills/recall/SKILL.md) | you're starting or resuming work and want your recent context on a topic rebuilt from your own chat history and the shared record, handed back as a tight current-state brief. |
 | [`/blast-radius`](./skills/blast-radius/SKILL.md) | you have a small-looking change and want to know what else it could break, with the one fact it's safe because of proven by running code, not asserted. |
 | [`/architect`](./skills/architect/SKILL.md) | you're about to write code that crosses a function boundary and want the caller's usage, types, and module shape settled first. |
@@ -278,12 +285,6 @@ most harnesses already have a plan or todo facility. pstack uses it when availab
 type [`automate-me`](./skills/automate-me/SKILL.md). it mines the current harness's in-scope transcripts when available, drafts a `<your-name>-mode` skill from how you've actually worked, and routes through pstack underneath. you keep pstack as the base and end up with your own routing skill alongside `poteto-mode`.
 
 models are configurable too. run [`setup-pstack`](./skills/setup-pstack/SKILL.md) once per harness. it detects the models you have access to and writes `~/.agents/pstack/models/<harness>.md`. every skill inherits the parent when the file or a role is absent.
-
-## legacy Cursor automation
-
-pstack retains the upstream [benny automation pack](./automations/benny/) as a Cursor-specific integration. the portable installer does not copy it because its routine and Slack-action APIs have no equivalent contract across the five target harnesses.
-
-use its [`FOR_AGENTS.md`](./automations/benny/FOR_AGENTS.md) only in Cursor. the portable skills do not depend on it.
 
 ## license
 

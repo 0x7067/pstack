@@ -1,0 +1,22 @@
+{
+  "packages": [
+    {
+      "source": "git:github.com/0x7067/pstack",
+      "extensions": [],
+      "skills": [
+        "skills/how/**",
+        "skills/hillclimb/**",
+        "skills/pause-safely/**",
+        "skills/principle-guard-the-context-window/**",
+        "skills/principle-prove-it-works/**",
+        "skills/pstack-harness/**",
+        "skills/session-pickup/**",
+        "skills/show-me-your-work/**",
+        "skills/unslop/**",
+        "skills/why/**"
+      ],
+      "prompts": [],
+      "themes": []
+    }
+  ]
+}

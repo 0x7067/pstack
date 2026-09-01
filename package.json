@@ -1,6 +1,11 @@
 {
   "name": "@0x7067/pstack",
   "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "check": "node scripts/validate-skills.mjs",
+    "test": "npm run check"
+  },
   "description": "pstack: Agent Skills for rigorous, parallelizable engineering work.",
   "license": "MIT",
   "repository": {
@@ -20,11 +25,12 @@
   ],
   "files": [
     "skills",
-    "pi-lite",
+    "profiles",
     "scripts",
     "docs",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "UPSTREAM.md"
   ],
   "pi": {
     "skills": ["./skills"]
