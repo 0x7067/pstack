@@ -88,8 +88,13 @@ function validateRootPackageLayout() {
 	if (!pkg) return;
 	if (pkg.name !== "@0x7067/pstack") fail(path, `name ${pkg.name} must stay @0x7067/pstack`);
 	const skills = pkg.pi?.skills;
-	if (!Array.isArray(skills) || skills.length !== 1 || skills[0] !== "./skills") {
-		fail(path, "pi.skills must remain [\"./skills\"]");
+	if (
+		!Array.isArray(skills) ||
+		skills.length !== 2 ||
+		skills[0] !== "./skills" ||
+		skills[1] !== "./pi-lite/skills"
+	) {
+		fail(path, "pi.skills must be [\"./skills\", \"./pi-lite/skills\"]");
 	}
 	if (!Array.isArray(pkg.keywords) || !pkg.keywords.includes("pi-package")) {
 		fail(path, "keywords must include pi-package");
@@ -158,6 +163,9 @@ function validatePiLiteSkillSet(skillDirs) {
 		const text = readFileSync(skill, "utf8");
 		if (!text.includes("Do not require `/poteto-mode` first")) {
 			fail(skill, "promoted skill must be standalone (not require /poteto-mode first)");
+		}
+		if (existsSync(join(skillsRoot, name, "SKILL.md"))) {
+			fail(join(skillsRoot, name), "do not copy promotions into skills/");
 		}
 	}
 }

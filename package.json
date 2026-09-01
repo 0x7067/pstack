@@ -26,6 +26,6 @@
     "README.md"
   ],
   "pi": {
-    "skills": ["./skills"]
+    "skills": ["./skills", "./pi-lite/skills"]
   }
 }

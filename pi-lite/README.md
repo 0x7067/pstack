@@ -8,13 +8,13 @@ This is not the full pstack catalog. It does not include `poteto-mode`, sticky m
 
 ## Install
 
-Pi 0.84.4 git sources clone the repository and load the **root** `package.json`. This command therefore installs `@0x7067/pstack` (all of `./skills`), not this package:
+Pi 0.84.4 git sources clone the repository and load the **root** `package.json`. That manifest lists both `./skills` and `./pi-lite/skills`, so this command also loads the lite skills, including the promoted `/pause-safely`, `/hillclimb`, and `/session-pickup` entries:
 
 ```bash
 pi install git:github.com/0x7067/pstack@<sha>
 ```
 
-There is no git subpath syntax in Pi 0.84.4 (`git:host/repo@sha` has no `#pi-lite` or subdirectory field). Nested `pi-lite/package.json` is a separate package root, installable as a **local path** after you clone that SHA:
+There is no git subpath syntax in Pi 0.84.4 (`git:host/repo@sha` has no `#pi-lite` or subdirectory field). Nested `pi-lite/package.json` is still a separate package root if you want **only** this subset. Clone that SHA and install the subdirectory as a **local path**:
 
 ```bash
 git clone https://github.com/0x7067/pstack.git
@@ -27,7 +27,9 @@ Then `/reload` so this session picks up the skills.
 
 ### Pinning from my-pi-setup
 
-Pin the git URL and SHA of `0x7067/pstack`, then install the `pi-lite` subdirectory as a local package. Identity for a local package is the resolved absolute path:
+To get lite skills through the full package, pin the git URL and SHA of `0x7067/pstack` (root `pi.skills` already includes `./pi-lite/skills`).
+
+To install **only** this subset, pin that same SHA, then install the `pi-lite` subdirectory as a local package. Identity for a local package is the resolved absolute path:
 
 ```json
 {
@@ -47,7 +49,7 @@ Relative paths resolve against the settings file they appear in. From a checkout
 }
 ```
 
-Do not shrink root `package.json` `pi.skills` to this subset. The root package remains the full catalog.
+Do not shrink root `package.json` `pi.skills` to this subset. The root package keeps `./skills` and also lists `./pi-lite/skills`.
 
 ### Dual-harness copies
 
