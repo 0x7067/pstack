@@ -10,6 +10,20 @@ const skillsRoot = join(root, "skills");
 const profilePath = join(root, "profiles", "pstack-lite.json");
 const errors = [];
 const fail = (path, message) => errors.push(`${relative(root, path)}: ${message}`);
+const agentPluginManifestPath = join(root, "plugin.json");
+const agentPluginSchema = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+const agentPluginFields = new Set([
+	"$schema",
+	"name",
+	"version",
+	"description",
+	"author",
+	"homepage",
+	"repository",
+	"license",
+	"keywords",
+	"extensions",
+]);
 
 const pstackLiteProfileSkills = [
 	"how",
@@ -83,6 +97,54 @@ function readJson(path) {
 	}
 }
 
+function validateAgentPluginManifest() {
+	const path = agentPluginManifestPath;
+	if (!existsSync(path)) {
+		fail(path, "Agent Plugins manifest is missing");
+		return;
+	}
+	if (!statSync(path).isFile()) {
+		fail(path, "Agent Plugins manifest must be a regular file");
+		return;
+	}
+	const manifest = readJson(path);
+	if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+		fail(path, "manifest must be a JSON object");
+		return;
+	}
+	if (manifest.$schema !== agentPluginSchema) fail(path, `$schema must be ${agentPluginSchema}`);
+	if (manifest.name !== "pstack") fail(path, `name must be pstack, got ${manifest.name}`);
+	if (typeof manifest.name !== "string" || manifest.name.length < 1 || manifest.name.length > 64 || !/^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(manifest.name)) {
+		fail(path, "name does not satisfy Agent Plugins naming constraints");
+	}
+	for (const field of Object.keys(manifest)) {
+		if (!agentPluginFields.has(field)) fail(path, `unknown top-level field ${field}`);
+	}
+	for (const field of ["version", "description", "homepage", "repository", "license"]) {
+		if (field in manifest && typeof manifest[field] !== "string") fail(path, `${field} must be a string`);
+	}
+	if ("keywords" in manifest && (!Array.isArray(manifest.keywords) || manifest.keywords.some((keyword) => typeof keyword !== "string"))) {
+		fail(path, "keywords must be an array of strings");
+	}
+	if ("author" in manifest) {
+		const author = manifest.author;
+		if (!author || typeof author !== "object" || Array.isArray(author)) fail(path, "author must be an object");
+		else {
+			for (const field of Object.keys(author)) {
+				if (!["name", "email", "url"].includes(field)) fail(path, `author has unknown field ${field}`);
+				else if (typeof author[field] !== "string") fail(path, `author.${field} must be a string`);
+			}
+		}
+	}
+	if ("extensions" in manifest) {
+		const extensions = manifest.extensions;
+		if (!extensions || typeof extensions !== "object" || Array.isArray(extensions)) fail(path, "extensions must be an object");
+		else for (const [namespace, value] of Object.entries(extensions)) {
+			if (!value || typeof value !== "object" || Array.isArray(value)) fail(path, `extension ${namespace} must be an object`);
+		}
+	}
+}
+
 function validateRootPackageLayout() {
 	const path = join(root, "package.json");
 	const pkg = readJson(path);
@@ -95,6 +157,9 @@ function validateRootPackageLayout() {
 	}
 	if (!Array.isArray(pkg.keywords) || !pkg.keywords.includes("pi-package")) {
 		fail(path, "keywords must include pi-package");
+	}
+	if (!Array.isArray(pkg.files) || !pkg.files.includes("plugin.json")) {
+		fail(path, "files must include plugin.json so the Agent Plugins manifest ships with the package");
 	}
 	if (!Array.isArray(pkg.files) || !pkg.files.includes("profiles")) {
 		fail(path, "files must include profiles so the Pi settings presets ship with the package");
@@ -159,7 +224,7 @@ function validatePortableLayout() {
 	}
 }
 
-function validateInstallScript(skillDirs) {
+function validateLegacyInstallScript(skillDirs) {
 	const path = join(root, "scripts", "install.sh");
 	if (!existsSync(path)) return;
 
@@ -220,10 +285,11 @@ function validateInstallScript(skillDirs) {
 }
 
 const skillDirs = validateSkillFrontmatter(skillsRoot);
+validateAgentPluginManifest();
 validateRootPackageLayout();
 validatePstackLiteProfile(skillDirs);
 validatePortableLayout();
-validateInstallScript(skillDirs);
+validateLegacyInstallScript(skillDirs);
 
 const skillMarkdownFiles = filesUnder(skillsRoot).filter((path) => path.endsWith(".md"));
 const documentationFiles = [

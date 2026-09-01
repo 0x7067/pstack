@@ -20,7 +20,9 @@ then `/reload` so this session picks up the skills.
 
 The README's [Pi install section](../../README.md#pi) owns the rest: how to switch to the smaller `pstack-lite` preset without loading the full package beside it, and what to do with the `~/.agents/skills` copies when you also use another harness.
 
-### Codex, Claude Code, oh-my-pi, and prime-agent
+### Legacy direct skill-directory installs
+
+Use this fallback only when the client reads skills from a user directory. Agent Plugins-compatible clients should install the pstack repository root as a plugin instead.
 
 From the pstack checkout, run:
 

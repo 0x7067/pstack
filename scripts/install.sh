@@ -2,8 +2,8 @@
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# Copy repo skills/ into ~/.agents/skills for Codex, Claude Code,
-# oh-my-pi, and prime-agent.
+# Legacy compatibility installer for clients that do not support Agent Plugins
+# and only load skills from user directories.
 source_dir=$(cd "$script_dir/../skills" && pwd)
 agent_skills_dir=${PSTACK_AGENT_SKILLS_DIR:-"$HOME/.agents/skills"}
 claude_skills_dir=${PSTACK_CLAUDE_SKILLS_DIR:-"$HOME/.claude/skills"}
