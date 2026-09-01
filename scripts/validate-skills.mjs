@@ -183,11 +183,21 @@ function validateInstallScript(skillDirs) {
 		rmSync(sandbox, { recursive: true, force: true });
 	}
 
+	const resolvedOrSelf = (candidate) => {
+		try {
+			return realpathSync(candidate);
+		} catch {
+			return candidate;
+		}
+	};
+
 	const copies = new Map();
 	const links = new Map();
 	for (const line of stdout.split(/\r?\n/)) {
 		const match = line.match(/^(copy|link) (.+) -> (.+)$/);
-		if (match) (match[1] === "copy" ? copies : links).set(match[2], match[3]);
+		if (!match) continue;
+		if (match[1] === "copy") copies.set(resolvedOrSelf(match[2]), match[3]);
+		else links.set(match[2], match[3]);
 	}
 
 	const sourceRoot = realpathSync(skillsRoot);

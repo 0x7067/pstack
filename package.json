@@ -2,6 +2,9 @@
   "name": "@0x7067/pstack",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "check": "node scripts/validate-skills.mjs",
     "test": "npm run check"
