@@ -1,6 +1,6 @@
 # pstack pi-lite
 
-A skills-only Pi package with a small subset of pstack: `/why`, `/unslop`, `/pause-safely`, `/hillclimb`, and `/session-pickup`, plus the sibling trees those skills read (`pstack-harness`, `/how`, `principle-prove-it-works`, `/show-me-your-work`).
+A skills-only Pi package with a small subset of pstack: `/why`, `/unslop`, `/pause-safely`, `/hillclimb`, and `/session-pickup`, plus the sibling trees those skills read (`pstack-harness`, `/how`, `principle-prove-it-works`, `principle-guard-the-context-window`, `/show-me-your-work`).
 
 This is not the full pstack catalog. It does not include `poteto-mode`, sticky mode, or the other playbooks. There is no TypeScript extension. Do not `npm publish` this package.
 
@@ -69,6 +69,7 @@ Pi-only users may remove the pstack copies under `~/.agents/skills` so the packa
 | [`pstack-harness`](./skills/pstack-harness/SKILL.md) | sibling of `/why` |
 | [`/how`](./skills/how/SKILL.md) | sibling of `/hillclimb` |
 | [`principle-prove-it-works`](./skills/principle-prove-it-works/SKILL.md) | sibling of `/hillclimb` (the prove-it tree as it exists under `skills/`; there is no `prove-it` skill) |
+| [`principle-guard-the-context-window`](./skills/principle-guard-the-context-window/SKILL.md) | sibling of `/session-pickup` and `/hillclimb` |
 | [`/show-me-your-work`](./skills/show-me-your-work/SKILL.md) | sibling of `/hillclimb` |
 
 Copied trees stay in sync with `skills/` of the same SHA. The originals of the three promoted playbooks stay under `skills/poteto-mode/playbooks/`.

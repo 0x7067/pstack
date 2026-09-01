@@ -16,6 +16,7 @@ const copiedPiLiteSkills = [
 	"pstack-harness",
 	"how",
 	"principle-prove-it-works",
+	"principle-guard-the-context-window",
 	"show-me-your-work",
 ];
 const promotedPiLiteSkills = ["pause-safely", "hillclimb", "session-pickup"];
